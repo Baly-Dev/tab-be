@@ -1,0 +1,1355 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>FlashTable — mini demo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --ink: #111111;
+    --paper: #f4f1eb;
+    --paper-2: #ebe6de;
+    --line: rgba(17, 17, 17, 0.1);
+    --muted: #6e685f;
+    --brass: #8d6a3a;
+    --white: #fffcf8;
+    --danger: #8d3a32;
+    --shadow: 0 24px 60px rgba(0, 0, 0, 0.18);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    min-height: 100%;
+    background:
+      radial-gradient(1200px 600px at 50% -10%, #2a241c 0%, transparent 55%),
+      #0e0e0e;
+    color: var(--white);
+    font-family: "Instrument Sans", Helvetica, Arial, sans-serif;
+    display: grid;
+    place-items: center;
+    padding: 32px 16px 40px;
+  }
+
+  .stage {
+    width: min(1120px, 100%);
+    display: grid;
+    grid-template-columns: 340px 390px;
+    gap: 64px;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .aside h1 {
+    font-family: "Instrument Serif", Georgia, serif;
+    font-weight: 400;
+    font-size: 52px;
+    line-height: 0.9;
+    letter-spacing: -0.03em;
+    margin: 0 0 10px;
+  }
+  .aside h1 em { font-style: italic; color: #e4d2b0; }
+  .aside .lead {
+    margin: 0;
+    color: rgba(255, 252, 248, 0.62);
+    font-size: 14px;
+    line-height: 1.45;
+    max-width: 34ch;
+  }
+  .process {
+    list-style: none;
+    margin: 26px 0 0;
+    padding: 0;
+  }
+  .process li {
+    display: grid;
+    grid-template-columns: 32px 1fr;
+    gap: 8px;
+    padding: 12px 0;
+    border-top: 1px solid rgba(255, 252, 248, 0.1);
+  }
+  .process .n {
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    color: rgba(255, 252, 248, 0.35);
+    padding-top: 2px;
+  }
+  .process strong {
+    display: block;
+    font-size: 15px;
+    font-weight: 560;
+    letter-spacing: -0.02em;
+  }
+  .process p {
+    margin: 4px 0 0;
+    color: rgba(255, 252, 248, 0.7);
+    font-size: 13px;
+    line-height: 1.4;
+    max-width: 34ch;
+  }
+  .process li.now strong { color: #e4d2b0; }
+  .process li.done .n { color: #e4d2b0; }
+  .process li.wait { opacity: 0.4; }
+  .aside-actions {
+    display: flex;
+    gap: 16px;
+    margin-top: 18px;
+  }
+  .aside-actions button {
+    border: 0;
+    background: transparent;
+    color: rgba(255, 252, 248, 0.72);
+    font: inherit;
+    font-size: 13px;
+    padding: 0;
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  #sala-note {
+    margin: 14px 0 0;
+    color: #e4d2b0;
+    font-size: 13px;
+    line-height: 1.4;
+    max-width: 34ch;
+  }
+
+  .phone {
+    width: 390px;
+    height: 800px;
+    background: #050505;
+    border-radius: 44px;
+    padding: 10px;
+    box-shadow: var(--shadow), inset 0 0 0 1px rgba(255,255,255,0.08);
+    position: relative;
+  }
+  .screen {
+    height: 100%;
+    background: var(--paper);
+    color: var(--ink);
+    border-radius: 36px;
+    overflow: hidden;
+    position: relative;
+  }
+  .island {
+    position: absolute;
+    top: 18px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 118px;
+    height: 28px;
+    background: #050505;
+    border-radius: 20px;
+    z-index: 20;
+  }
+
+  .view {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(8px);
+    transition: opacity 0.28s ease, transform 0.28s ease;
+  }
+  .view.on {
+    opacity: 1;
+    pointer-events: auto;
+    transform: none;
+  }
+
+  .map {
+    height: 248px;
+    flex: none;
+    background: #161616;
+    position: relative;
+    overflow: hidden;
+  }
+  .map svg { width: 100%; height: 100%; display: block; }
+  .map .you {
+    position: absolute;
+    left: 46%;
+    top: 48%;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--white);
+    box-shadow: 0 0 0 6px rgba(255,252,248,0.16);
+  }
+  .map .loc {
+    position: absolute;
+    left: 18px;
+    bottom: 54px;
+    color: var(--white);
+  }
+  .map .loc small {
+    display: block;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    opacity: 0.62;
+  }
+  .map .loc strong {
+    font-size: 22px;
+    font-weight: 560;
+    letter-spacing: -0.03em;
+  }
+
+  .sheet {
+    margin-top: -28px;
+    background: var(--paper);
+    border-radius: 28px 28px 0 0;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    z-index: 2;
+  }
+  .handle {
+    width: 36px;
+    height: 4px;
+    border-radius: 4px;
+    background: rgba(17,17,17,0.16);
+    margin: 10px auto 4px;
+  }
+  .sheet-head {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    padding: 8px 20px 12px;
+  }
+  .sheet-head h2 {
+    margin: 0;
+    font-size: 28px;
+    letter-spacing: -0.04em;
+    font-weight: 560;
+  }
+  .sheet-head span {
+    font-size: 13px;
+    color: var(--muted);
+    padding-bottom: 4px;
+  }
+
+  .chips {
+    display: flex;
+    gap: 8px;
+    padding: 0 20px 12px;
+    overflow-x: auto;
+  }
+  .chips::-webkit-scrollbar { display: none; }
+  .chip {
+    border: 0;
+    background: transparent;
+    color: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 8px 12px;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 560;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .chip.on { background: var(--ink); color: var(--white); border-color: var(--ink); }
+
+  .list {
+    overflow: auto;
+    padding: 0 12px 150px;
+    flex: 1;
+  }
+  .row {
+    width: 100%;
+    text-align: left;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    display: grid;
+    grid-template-columns: 54px 1fr auto;
+    gap: 12px;
+    padding: 14px 8px;
+    border-bottom: 1px solid var(--line);
+    cursor: pointer;
+    align-items: center;
+  }
+  .row:hover { background: rgba(17,17,17,0.03); }
+  .row.dim { opacity: 0.42; }
+  .plate {
+    width: 54px;
+    height: 54px;
+    border-radius: 14px;
+    display: grid;
+    place-items: center;
+    color: #f4f1eb;
+    font-family: "Instrument Serif", Georgia, serif;
+    font-size: 26px;
+  }
+  .row h3 {
+    margin: 0;
+    font-family: "Instrument Serif", Georgia, serif;
+    font-size: 22px;
+    font-weight: 400;
+    letter-spacing: -0.02em;
+  }
+  .row p, .detail .sub, .muted { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+  .price { text-align: right; }
+  .price b {
+    display: block;
+    font-size: 18px;
+    letter-spacing: -0.03em;
+    font-weight: 600;
+  }
+  .price s {
+    color: var(--muted);
+    font-size: 12px;
+  }
+  .save {
+    color: var(--brass);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+  .need {
+    grid-column: 2 / -1;
+    font-size: 12px;
+    color: var(--danger);
+    margin-top: -6px;
+  }
+
+  .tabbar {
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+    height: 62px;
+    background: rgba(255, 252, 248, 0.92);
+    backdrop-filter: blur(16px);
+    border-radius: 22px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+    z-index: 5;
+  }
+  .tabbar button {
+    border: 0;
+    background: transparent;
+    font: inherit;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .tabbar button.on { color: var(--ink); }
+
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 54px 18px 8px;
+  }
+  .topbar.tight { padding-top: 8px; }
+  .icon-btn, .text-btn {
+    border: 0;
+    background: transparent;
+    font: inherit;
+    cursor: pointer;
+    color: var(--ink);
+  }
+  .icon-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: var(--white);
+  }
+  .text-btn { font-size: 14px; font-weight: 560; }
+
+  .detail { overflow: auto; padding-bottom: 168px; }
+  .hero-name {
+    padding: 8px 22px 0;
+  }
+  .kicker {
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0;
+  }
+  .hero-name h2 {
+    font-family: "Instrument Serif", Georgia, serif;
+    font-size: 52px;
+    line-height: 0.9;
+    font-weight: 400;
+    margin: 6px 0 8px;
+    letter-spacing: -0.03em;
+  }
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    padding: 18px 22px;
+  }
+  .stat {
+    background: var(--white);
+    border-radius: 16px;
+    padding: 12px;
+  }
+  .stat small { display: block; color: var(--muted); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; }
+  .stat b { display: block; margin-top: 4px; font-size: 16px; letter-spacing: -0.03em; }
+  .stat b em { font-style: normal; color: var(--brass); }
+
+  .block { padding: 4px 22px 16px; }
+  .block h3 { margin: 0 0 8px; font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+  .menu-line {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 0;
+    border-top: 1px solid var(--line);
+    font-size: 15px;
+  }
+  .final {
+    margin: 6px 22px 0;
+    background: var(--ink);
+    color: var(--white);
+    border-radius: 22px;
+    padding: 16px 18px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+  }
+  .final small { display: block; opacity: 0.6; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; }
+  .final strong { font-size: 32px; letter-spacing: -0.04em; font-weight: 560; }
+  .final .was { text-align: right; color: #e4d2b0; font-size: 13px; }
+
+  .dock {
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    padding: 12px 16px 18px;
+    background: linear-gradient(to top, var(--paper) 70%, transparent);
+    z-index: 4;
+  }
+  .btn {
+    width: 100%;
+    height: 54px;
+    border: 0;
+    border-radius: 16px;
+    background: var(--ink);
+    color: var(--white);
+    font: inherit;
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    cursor: pointer;
+  }
+  .btn:disabled { background: #c9c3ba; cursor: default; }
+  .btn.ghost {
+    background: transparent;
+    color: var(--ink);
+    height: 42px;
+  }
+
+  .overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(14, 14, 14, 0.46);
+    z-index: 8;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+  }
+  .overlay.on { opacity: 1; pointer-events: auto; }
+  .panel {
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    background: var(--paper);
+    border-radius: 28px 28px 0 0;
+    padding: 8px 18px 22px;
+    transform: translateY(110%);
+    transition: transform 0.32s cubic-bezier(.2,.8,.2,1);
+    z-index: 9;
+  }
+  .panel.on { transform: none; }
+  .panel h2 {
+    font-size: 26px;
+    letter-spacing: -0.04em;
+    margin: 12px 0 4px;
+    font-weight: 560;
+  }
+  .people { display: flex; flex-direction: column; gap: 8px; margin: 14px 0; }
+  .person {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: var(--white);
+    border-radius: 16px;
+    padding: 10px 12px;
+  }
+  .avatar {
+    width: 36px; height: 36px; border-radius: 50%;
+    background: var(--ink); color: var(--white);
+    display: grid; place-items: center;
+    font-size: 13px; font-weight: 600;
+  }
+  .person .who { flex: 1; }
+  .person .who b { display: block; font-weight: 600; font-size: 14px; }
+  .person .who span { color: var(--muted); font-size: 12px; }
+  .add {
+    border: 0;
+    background: var(--paper-2);
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    font: inherit;
+    font-size: 18px;
+    cursor: pointer;
+  }
+  .add.in { background: var(--ink); color: var(--white); }
+
+  .pay-lines { margin: 16px 0 18px; }
+  .pay-lines div {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px 0;
+    border-top: 1px solid var(--line);
+    font-size: 15px;
+  }
+  .pay-lines .total { font-weight: 650; font-size: 17px; }
+
+  .done {
+    padding: 8px 24px 24px;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+  .done .progress { padding-left: 0; padding-right: 0; }
+  .done .mark {
+    width: 54px; height: 54px; border-radius: 50%;
+    background: var(--ink); color: var(--white);
+    display: grid; place-items: center;
+    font-size: 22px;
+  }
+  .done h2 {
+    font-family: "Instrument Serif", Georgia, serif;
+    font-size: 58px;
+    line-height: 0.9;
+    font-weight: 400;
+    margin: 18px 0 8px;
+  }
+  .ticket {
+    margin-top: 18px;
+    background: var(--white);
+    border-radius: 22px;
+    padding: 16px 16px 8px;
+  }
+  .ticket .line {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 16px;
+    padding: 11px 0;
+    border-top: 1px solid var(--line);
+    font-size: 14px;
+  }
+  .ticket .line b { text-align: right; font-weight: 600; }
+  .ticket .line:first-child { border-top: 0; }
+  .ticket .line span { color: var(--muted); }
+  .stars { display: flex; gap: 6px; margin-top: 18px; }
+  .stars button {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    border: 1px solid var(--line);
+    background: var(--white);
+    cursor: pointer;
+    font-size: 14px;
+    color: var(--ink);
+  }
+  .stars button.on { background: var(--ink); color: var(--white); border-color: var(--ink); }
+  .review-note { color: var(--muted); font-size: 13px; min-height: 18px; }
+
+  .sala { padding: 64px 20px 24px; height: 100%; display: flex; flex-direction: column; }
+  .sala h2 { margin: 8px 0 4px; font-size: 30px; letter-spacing: -0.04em; font-weight: 560; }
+  .choices { display: grid; gap: 8px; margin: 16px 0; }
+  .choice {
+    text-align: left;
+    border: 1px solid var(--line);
+    background: var(--white);
+    border-radius: 16px;
+    padding: 12px 14px;
+    font: inherit;
+    cursor: pointer;
+  }
+  .choice.on { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+  .choice b { display: block; font-size: 15px; }
+  .choice span { color: var(--muted); font-size: 13px; }
+  .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .field {
+    background: var(--white);
+    border-radius: 16px;
+    padding: 10px 12px;
+  }
+  .field label { display: block; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  .field input {
+    width: 100%;
+    border: 0;
+    background: transparent;
+    font: inherit;
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: -0.03em;
+    padding: 4px 0 0;
+    color: var(--ink);
+  }
+  .field input:focus { outline: none; }
+  .sala .btn { margin-top: auto; }
+  .clock {
+    font-variant-numeric: tabular-nums;
+    color: var(--brass);
+    font-weight: 650;
+    font-size: 13px;
+  }
+
+  .empty {
+    padding: 28px 8px;
+    color: var(--muted);
+    font-size: 14px;
+  }
+
+  .progress {
+    display: flex;
+    gap: 12px;
+    padding: 56px 22px 0;
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: rgba(17, 17, 17, 0.34);
+  }
+  .progress span.now { color: var(--ink); font-weight: 650; }
+  .progress span.done { color: var(--brass); }
+  .progress.light {
+    position: absolute;
+    top: 46px;
+    left: 0;
+    right: 0;
+    padding: 0 18px;
+    color: rgba(255, 252, 248, 0.4);
+    z-index: 2;
+  }
+  .progress.light span.now { color: var(--white); }
+  .progress.light span.done { color: #e4d2b0; }
+
+  .intent { justify-content: flex-start; }
+  .intent-body { margin-top: auto; }
+  .intent-body { padding: 18px 24px 12px; }
+  .intent-body h2 {
+    font-family: "Instrument Serif", Georgia, serif;
+    font-weight: 400;
+    font-size: 64px;
+    line-height: 0.88;
+    letter-spacing: -0.03em;
+    margin: 8px 0 12px;
+  }
+  .intent-body .story {
+    margin: 0;
+    font-size: 17px;
+    line-height: 1.4;
+    max-width: 22ch;
+  }
+  .intent-body .who {
+    margin: 22px 0 0;
+    color: var(--muted);
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .hint {
+    margin: -4px 20px 10px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+  .choicebar {
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+    background: rgba(255, 252, 248, 0.94);
+    backdrop-filter: blur(16px);
+    border-radius: 22px;
+    padding: 12px;
+    z-index: 5;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+  }
+  .choicebar small {
+    display: block;
+    color: var(--muted);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .choicebar .rowline {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .choicebar b { font-size: 15px; letter-spacing: -0.02em; }
+  .choicebar .names { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .choicebar .ask { margin: 0 0 8px; font-size: 14px; font-weight: 600; letter-spacing: -0.02em; }
+  .pair { display: grid; grid-template-columns: 1fr 1.3fr; gap: 8px; }
+  .pair button, .choicebar .texty {
+    height: 42px;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    background: var(--white);
+    font: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .pair button.solid, .choicebar .texty {
+    background: var(--ink);
+    color: var(--white);
+    border-color: var(--ink);
+    padding: 0 14px;
+    width: auto;
+  }
+  .dock.stack { display: grid; gap: 8px; }
+  .btn.line {
+    background: transparent;
+    color: var(--ink);
+    box-shadow: inset 0 0 0 1.5px var(--ink);
+  }
+
+  @media (max-width: 860px) {
+    body { display: block; padding: 0; background: var(--paper); }
+    .stage { display: block; }
+    .aside { display: none; }
+    .phone {
+      width: 100%;
+      height: 100vh;
+      height: 100dvh;
+      border-radius: 0;
+      padding: 0;
+      box-shadow: none;
+      background: var(--paper);
+    }
+    .screen { border-radius: 0; }
+    .island { display: none; }
+  }
+</style>
+</head>
+<body>
+  <div class="stage">
+    <aside class="aside">
+      <h1>Flash<em>Table</em></h1>
+      <p class="lead">Il pranzo di un professionista, un passo alla volta. Si fa tutto sul telefono.</p>
+      <ol class="process" id="process"></ol>
+      <p id="sala-note" hidden>Adesso vedi il lato sala: il ristoratore pubblica l’offerta di pranzo in pochi secondi.</p>
+      <div class="aside-actions">
+        <button id="go-restart" type="button">Ricomincia</button>
+        <button id="go-sala" type="button">Vedi la sala</button>
+      </div>
+    </aside>
+
+    <div class="phone">
+      <div class="island"></div>
+      <div class="screen" id="app"></div>
+    </div>
+  </div>
+
+<script>
+const OFFERS = [
+  { id: "sala", name: "Sala Garibaldi", area: "Porta Nuova", walk: 3, kind: "lunch", time: "13:00", until: "13:25", seats: 4, price: 22, was: 38, courses: ["Insalata di mercato", "Pasta al pomodoro", "Caffè"], minutes: 35, ink: "#241c18" },
+  { id: "vico", name: "Vico", area: "Isola", walk: 8, kind: "business", time: "12:45", until: "13:15", seats: 6, price: 34, was: 58, courses: ["Crudo di ricciola", "Risotto allo zafferano", "Torta al cacao"], minutes: 50, ink: "#1b2430" },
+  { id: "corte", name: "Corte", area: "Brera", walk: 9, kind: "business", time: "13:15", until: "13:40", seats: 5, price: 31, was: 52, courses: ["Uovo morbido", "Tagliata", "Mignon"], minutes: 55, ink: "#2c2419" },
+  { id: "latteria", name: "Latteria", area: "Moscova", walk: 6, kind: "lunch", time: "12:30", until: "13:00", seats: 2, price: 18, was: 29, courses: ["Zuppa del giorno", "Secondo della casa", "Caffè"], minutes: 30, ink: "#1e2a24" },
+  { id: "nav", name: "Naviglio quieto", area: "Garibaldi", walk: 11, kind: "lunch", time: "12:15", until: "12:50", seats: 3, price: 24, was: 40, courses: ["Vitello tonnato", "Agnolotti", "Frutta"], minutes: 40, ink: "#2a1e22" },
+  { id: "alto", name: "Alto", area: "Porta Nuova", walk: 4, kind: "business", time: "12:30", until: "13:05", seats: 8, price: 36, was: 64, courses: ["Tartare", "Branzino", "Sorbetto"], minutes: 50, ink: "#20242c" }
+];
+
+const COLLEAGUES = [
+  { id: "giulia", name: "Giulia Valli", role: "Legal", ini: "GV" },
+  { id: "marco", name: "Marco Riva", role: "Consulting", ini: "MR" },
+  { id: "elena", name: "Elena Sarti", role: "Entrepreneurship", ini: "ES" }
+];
+
+const STEPS = [
+  { id: "intent", n: "01", title: "Vuole fare pausa pranzo" },
+  { id: "offers", n: "02", title: "Vede le offerte last-minute" },
+  { id: "company", n: "03", title: "Da solo, o con i colleghi" },
+  { id: "table", n: "04", title: "Prende il tavolo" }
+];
+
+const state = {
+  face: "guest",
+  screen: "intent",
+  kind: "all",
+  company: null,
+  party: [],
+  groupKind: "lunch",
+  offerId: null,
+  seats: Object.fromEntries(OFFERS.map(o => [o.id, o.seats])),
+  booking: null,
+  sheet: null,
+  review: 0,
+  reviewSent: false,
+  experience: "business",
+  form: { price: 34, time: "12:45", qty: 6, until: "13:30" },
+  published: null,
+  publishStarted: null
+};
+
+const $ = (sel, root = document) => root.querySelector(sel);
+const app = () => document.getElementById("app");
+const euro = n => n.toLocaleString("it-IT", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
+const saveOf = o => Math.round((1 - o.price / o.was) * 100);
+const kindLabel = k => k === "business" ? "Business lunch" : "Lunch";
+const partySize = () => 1 + state.party.length;
+const offerById = id => OFFERS.find(o => o.id === id);
+
+function visibleOffers() {
+  return OFFERS
+    .filter(o => state.kind === "all" || o.kind === state.kind)
+    .slice()
+    .sort((a, b) => a.walk - b.walk);
+}
+
+function currentStep() {
+  if (state.face === "sala") return "sala";
+  if (state.screen === "intent") return "intent";
+  if (state.screen === "done" || state.sheet === "pay" || (state.screen === "detail" && state.company)) return "table";
+  if (state.sheet === "group" || state.company || state.screen === "detail") return "company";
+  return "offers";
+}
+
+function stepText(id) {
+  const names = COLLEAGUES.filter(c => state.party.includes(c.id)).map(c => c.name.split(" ")[0]);
+  if (id === "intent") return "Un professionista è a Porta Nuova. Vuole fare pausa pranzo: poco tempo, un tavolo, spendere meno.";
+  if (id === "offers") return "Apre FlashTable e vede i lunch last-minute vicini. Ogni offerta ha prezzo finale, orario e posti ancora veri.";
+  if (id === "company" && state.company === "solo") return "Ha scelto di pranzare da solo. Adesso prende un tavolo tra le offerte.";
+  if (id === "company" && state.party.length) {
+    const tipo = state.groupKind === "business" ? "business lunch" : "lunch group";
+    return "Ha aperto un " + tipo + " e invitato " + names.join(", ") + ". Il tavolo deve avere un posto per ciascuno.";
+  }
+  if (id === "company") return "Può prenotare per sé, oppure aprire un lunch group o un business lunch e invitare i colleghi.";
+  if (state.screen === "done" && state.booking) return "Ha pagato " + euro(state.booking.total) + ". Conferma immediata: il tavolo da " + state.booking.place + " è suo.";
+  return "Sceglie un’offerta, paga il prezzo già visto e riceve subito la conferma del tavolo.";
+}
+
+function renderProcess() {
+  const active = currentStep();
+  const order = ["intent", "offers", "company", "table"];
+  const at = order.indexOf(active);
+  document.getElementById("process").innerHTML = STEPS.map((s, i) => {
+    const cls = active === "sala" ? "wait" : i < at ? "done" : i === at ? "now" : "wait";
+    return `<li class="${cls}"><span class="n">${cls === "done" ? "✓" : s.n}</span><div><strong>${s.title}</strong>${cls === "now" ? `<p>${stepText(s.id)}</p>` : ""}</div></li>`;
+  }).join("");
+  document.getElementById("sala-note").hidden = active !== "sala";
+  document.getElementById("go-sala").textContent = active === "sala" ? "Torna al pranzo" : "Vedi la sala";
+}
+
+function progress(active, light) {
+  const order = ["intent", "offers", "company", "table"];
+  const labels = ["Pausa", "Offerte", "Compagnia", "Tavolo"];
+  const at = order.indexOf(active);
+  return `<div class="progress ${light ? "light" : ""}">${labels.map((label, i) => `<span class="${i < at ? "done" : i === at ? "now" : ""}">${label}</span>`).join("")}</div>`;
+}
+
+function render() {
+  const root = app();
+  root.innerHTML = "";
+  if (state.face === "sala") renderSala(root);
+  else if (state.screen === "intent") renderIntent(root);
+  else if (state.screen === "detail") renderDetail(root);
+  else if (state.screen === "done") renderDone(root);
+  else if (state.screen === "bookings") renderBookings(root);
+  else renderHome(root);
+  renderProcess();
+}
+
+function renderIntent(root) {
+  root.innerHTML = `
+    <section class="view on intent">
+      ${progress("intent")}
+      <div class="intent-body">
+        <p class="kicker">Porta Nuova · adesso</p>
+        <h2>Pausa pranzo.</h2>
+        <p class="story">Sei in ufficio. Hai poco tempo, vuoi un tavolo e spendere meno del solito.</p>
+        <p class="who">Tu · Finance</p>
+      </div>
+      <div class="dock">
+        <button class="btn" data-action="see-offers" type="button">Vedi le offerte FlashTable</button>
+      </div>
+    </section>
+  `;
+  bind(root);
+}
+
+function choiceBar() {
+  if (state.party.length) {
+    const names = COLLEAGUES.filter(c => state.party.includes(c.id)).map(c => c.name.split(" ")[0]).join(", ");
+    const label = state.groupKind === "business" ? "Business lunch" : "Lunch group";
+    return `
+      <div class="choicebar">
+        <div class="rowline">
+          <div>
+            <small>${label} · ${partySize()} persone</small>
+            <div class="names">Con ${names}</div>
+          </div>
+          <button class="texty" data-action="group" type="button">Inviti</button>
+        </div>
+      </div>`;
+  }
+  if (state.company === "solo") {
+    return `
+      <div class="choicebar">
+        <div class="rowline">
+          <div><small>Hai scelto</small><b>Pranzo da solo</b></div>
+          <button class="texty" data-action="group" type="button">Invita</button>
+        </div>
+      </div>`;
+  }
+  return `
+    <div class="choicebar">
+      <p class="ask">Da solo, o con i colleghi?</p>
+      <div class="pair">
+        <button data-action="solo" type="button">Da solo</button>
+        <button class="solid" data-action="group" type="button">Invita i colleghi</button>
+      </div>
+    </div>`;
+}
+
+function renderHome(root) {
+  const offers = visibleOffers();
+  const size = partySize();
+  root.innerHTML = `
+    <section class="view on" data-screen="home">
+      <div class="map">
+        ${progress(currentStep(), true)}
+        ${mapSvg()}
+        <div class="you"></div>
+        <div class="loc"><small>Last-minute · adesso</small><strong>Porta Nuova</strong></div>
+      </div>
+      <div class="sheet">
+        <div class="handle"></div>
+        <div class="sheet-head">
+          <h2>Offerte</h2>
+          <span>${offers.length} lunch</span>
+        </div>
+        <p class="hint">Prezzo finale e posti veri, vicini a te.</p>
+        <div class="chips">
+          ${chip("all", "Tutti")}
+          ${chip("lunch", "Lunch")}
+          ${chip("business", "Business lunch")}
+        </div>
+        <div class="list" id="list">
+          ${offers.map(o => row(o, size)).join("") || `<div class="empty">Nessun lunch in questa finestra.</div>`}
+        </div>
+      </div>
+      ${choiceBar()}
+    </section>
+    ${sheetHtml()}
+  `;
+  bind(root);
+}
+
+function row(o, size) {
+  const left = state.seats[o.id];
+  const ok = left >= size;
+  return `
+    <button class="row ${ok ? "" : "dim"}" data-open="${o.id}">
+      <div class="plate" style="background:${o.ink}">${o.name.slice(0,1)}</div>
+      <div>
+        <h3>${o.name}</h3>
+        <p>${o.area} · ${o.walk} min</p>
+        <p>${kindLabel(o.kind)} · ${o.time} · ${left} ${left === 1 ? "posto" : "posti"}</p>
+      </div>
+      <div class="price">
+        <b>${euro(o.price)}</b>
+        <s>${euro(o.was)}</s>
+        <div class="save">−${saveOf(o)}%</div>
+      </div>
+      ${ok ? "" : `<div class="need">Servono ${size} posti</div>`}
+    </button>
+  `;
+}
+
+function chip(id, label) {
+  return `<button class="chip ${state.kind === id ? "on" : ""}" data-kind="${id}">${label}</button>`;
+}
+
+function renderDetail(root) {
+  const o = offerById(state.offerId);
+  const left = state.seats[o.id];
+  const size = partySize();
+  const ok = left >= size;
+  const total = o.price * size;
+  const dock = !state.company
+    ? `<div class="dock stack">
+        <button class="btn line" data-action="solo" type="button">Pranzo da solo</button>
+        <button class="btn" data-action="group" type="button">Invita i colleghi</button>
+      </div>`
+    : `<div class="dock">
+        <button class="btn" data-action="pay" ${ok ? "" : "disabled"} type="button">${ok ? "Prenota il tavolo" : "Posti insufficienti"}</button>
+      </div>`;
+  root.innerHTML = `
+    <section class="view on detail">
+      ${progress(state.company ? "table" : "company")}
+      <div class="topbar tight">
+        <button class="icon-btn" data-action="back" aria-label="Indietro">←</button>
+        <button class="text-btn" data-action="group" type="button">${state.party.length ? size + " persone" : "Gruppo"}</button>
+      </div>
+      <div class="hero-name">
+        <p class="kicker">${kindLabel(o.kind)} · ${o.area}</p>
+        <h2>${o.name}</h2>
+        <p class="sub">${o.walk} minuti a piedi · ${o.minutes} minuti a tavola</p>
+      </div>
+      <div class="stats">
+        <div class="stat"><small>Orario</small><b>${o.time}</b></div>
+        <div class="stat"><small>Posti</small><b>${left}</b></div>
+        <div class="stat"><small>Risparmi</small><b><em>−${saveOf(o)}%</em></b></div>
+      </div>
+      <div class="block">
+        <h3>Il menu</h3>
+        ${o.courses.map((c, i) => `<div class="menu-line"><span>${c}</span><span class="muted">${["Inizio","Poi","Chiude"][i]}</span></div>`).join("")}
+      </div>
+      <div class="final">
+        <div>
+          <small>Prezzo finale${size > 1 ? " · " + size + " persone" : ""}</small>
+          <strong>${euro(total)}</strong>
+        </div>
+        <div class="was">${euro(o.was * size)} in sala<br>scade ${o.until}</div>
+      </div>
+      ${dock}
+    </section>
+    ${sheetHtml()}
+  `;
+  bind(root);
+}
+
+function renderDone(root) {
+  const b = state.booking;
+  root.innerHTML = `
+    <section class="view on done">
+      ${progress("table")}
+      <div class="mark">✓</div>
+      <p class="kicker">Conferma immediata</p>
+      <h2>Il tavolo è tuo.</h2>
+      <p class="sub">Pagamento riuscito. ${b.place} tiene i posti.</p>
+      <div class="ticket">
+        <div class="line"><span>Ristorante</span><b>${b.place}</b></div>
+        <div class="line"><span>Oggi</span><b>${b.time}</b></div>
+        <div class="line"><span>Persone</span><b>${b.size}</b></div>
+        ${b.group ? `<div class="line"><span>Gruppo</span><b>${b.group}</b></div>` : ""}
+        ${b.with ? `<div class="line"><span>Con</span><b>${b.with}</b></div>` : ""}
+        <div class="line"><span>Pagato</span><b>${euro(b.total)}</b></div>
+        <div class="line"><span>Codice</span><b>${b.code}</b></div>
+      </div>
+      <div class="stars" aria-label="Recensione verificata">
+        ${[1,2,3,4,5].map(n => `<button data-star="${n}" class="${state.review >= n ? "on" : ""}" type="button" aria-label="${n}">★</button>`).join("")}
+      </div>
+      <p class="review-note">${state.reviewSent ? "Recensione verificata del menu. Solo chi ha prenotato può lasciarla." : "Dopo il pranzo, una recensione del menu."}</p>
+      <div style="margin-top:auto">
+        <button class="btn" data-action="home">Torna ai lunch</button>
+      </div>
+    </section>
+  `;
+  bind(root);
+}
+
+function renderBookings(root) {
+  const b = state.booking;
+  root.innerHTML = `
+    <section class="view on">
+      <div class="topbar"><div></div><div></div></div>
+      <div class="sheet-head"><h2>Prenotazioni</h2></div>
+      <div class="list">
+        ${b ? `
+          <button class="row" data-action="done">
+            <div class="plate" style="background:#1b2430">${b.place.slice(0,1)}</div>
+            <div>
+              <h3>${b.place}</h3>
+              <p>Oggi ${b.time} · ${b.size} ${b.size > 1 ? "persone" : "persona"}</p>
+              <p>${b.code}</p>
+            </div>
+            <div class="price"><b>${euro(b.total)}</b><div class="save">Confermato</div></div>
+          </button>` : `<div class="empty">Nessun tavolo oggi. Il pranzo è ancora da prendere.</div>`}
+      </div>
+      ${tabbar("bookings")}
+    </section>
+  `;
+  bind(root);
+}
+
+function renderSala(root) {
+  const exp = state.experience;
+  const ticking = state.publishStarted ? Math.max(1, Math.round((Date.now() - state.publishStarted) / 1000)) : 0;
+  root.innerHTML = `
+    <section class="view on sala">
+      <p class="kicker">Sala · pausa pranzo</p>
+      <h2>Pubblica un’offerta.</h2>
+      <p class="sub">Il menu è già pronto. Restano prezzo, orario, quantità, scadenza.</p>
+      <p class="clock" id="clock">${state.published ? "Pubblicata" : ticking ? ticking + " secondi" : "Sotto i 30 secondi"}</p>
+      <div class="choices">
+        <button class="choice ${exp === "lunch" ? "on" : ""}" data-exp="lunch" type="button">
+          <b>Lunch della casa</b><span>Esperienza già configurata</span>
+        </button>
+        <button class="choice ${exp === "business" ? "on" : ""}" data-exp="business" type="button">
+          <b>Business lunch</b><span>Esperienza già configurata</span>
+        </button>
+      </div>
+      <div class="fields">
+        ${field("price", "Prezzo", state.form.price)}
+        ${field("time", "Orario", state.form.time)}
+        ${field("qty", "Quantità", state.form.qty)}
+        ${field("until", "Scadenza", state.form.until)}
+      </div>
+      ${state.published ? `<p class="sub" style="margin-top:16px">${state.published}</p>` : ""}
+      <button class="btn" data-action="publish" ${state.published ? "disabled" : ""}>${state.published ? "In sala" : "Pubblica"}</button>
+    </section>
+  `;
+  bind(root);
+  if (!state.published && !state.publishStarted) state.publishStarted = Date.now();
+  if (!state.published) {
+    const clock = root.querySelector("#clock");
+    const timer = setInterval(() => {
+      if (!document.body.contains(clock) || state.published) { clearInterval(timer); return; }
+      const s = Math.max(1, Math.round((Date.now() - state.publishStarted) / 1000));
+      clock.textContent = s + (s === 1 ? " secondo" : " secondi");
+    }, 400);
+  }
+}
+
+function field(key, label, value) {
+  return `<div class="field"><label>${label}</label><input data-field="${key}" value="${value}" inputmode="${key === "price" || key === "qty" ? "numeric" : "text"}" /></div>`;
+}
+
+function sheetHtml() {
+  const openGroup = state.sheet === "group";
+  const openPay = state.sheet === "pay";
+  const o = state.offerId ? offerById(state.offerId) : null;
+  const size = partySize();
+  return `
+    <div class="overlay ${openGroup || openPay ? "on" : ""}" data-action="close"></div>
+    <div class="panel ${openGroup ? "on" : ""}" id="group-panel">
+      <div class="handle"></div>
+      <h2>Invita i colleghi</h2>
+      <p class="sub">Apri un lunch group o un business lunch e aggiungi gli altri. Poi prenotate lo stesso ristorante scontato.</p>
+      <div class="chips" style="padding-left:0">
+        <button class="chip ${state.groupKind === "lunch" ? "on" : ""}" data-gkind="lunch">Lunch group</button>
+        <button class="chip ${state.groupKind === "business" ? "on" : ""}" data-gkind="business">Business lunch</button>
+      </div>
+      <div class="people">
+        <div class="person"><div class="avatar">TU</div><div class="who"><b>Tu</b><span>Finance</span></div></div>
+        ${COLLEAGUES.map(c => `
+          <div class="person">
+            <div class="avatar">${c.ini}</div>
+            <div class="who"><b>${c.name}</b><span>${c.role}</span></div>
+            <button class="add ${state.party.includes(c.id) ? "in" : ""}" data-add="${c.id}" type="button" aria-label="Aggiungi ${c.name}">${state.party.includes(c.id) ? "✓" : "+"}</button>
+          </div>`).join("")}
+      </div>
+      <button class="btn ghost" data-action="with-three" type="button">Pausa con 3 colleghi</button>
+      <button class="btn" data-action="close" type="button">${state.party.length ? "Vedi i tavoli del gruppo" : "Chiudi"}</button>
+    </div>
+    <div class="panel ${openPay ? "on" : ""}">
+      <div class="handle"></div>
+      <h2>Paga</h2>
+      <p class="sub">Il prezzo che vedi è quello che paghi.</p>
+      ${o ? `
+        <div class="pay-lines">
+          <div><span>${o.name}</span><span>${euro(o.price)}</span></div>
+          <div><span>${size} ${size > 1 ? "menu" : "menu"}</span><span>${size} × ${euro(o.price)}</span></div>
+          <div class="total"><span>Prezzo finale</span><span>${euro(o.price * size)}</span></div>
+        </div>` : ""}
+      <button class="btn" data-action="confirm" type="button">Conferma e paga</button>
+    </div>
+  `;
+}
+
+function tabbar(active) {
+  return `
+    <nav class="tabbar">
+      <button class="${active === "home" ? "on" : ""}" data-action="home" type="button">Pranzo</button>
+      <button class="${state.sheet === "group" ? "on" : ""}" data-action="group" type="button">Gruppo</button>
+      <button class="${active === "bookings" ? "on" : ""}" data-action="bookings" type="button">Tavoli</button>
+    </nav>`;
+}
+
+function mapSvg() {
+  return `
+    <svg viewBox="0 0 390 248" aria-hidden="true">
+      <rect width="390" height="248" fill="#141414"/>
+      <g stroke="rgba(244,241,235,0.16)" stroke-width="10" fill="none">
+        <path d="M-10 70 H400"/>
+        <path d="M-10 150 H400"/>
+        <path d="M70 -10 V260"/>
+        <path d="M210 -10 V260"/>
+        <path d="M320 -10 V260"/>
+      </g>
+      <g stroke="rgba(244,241,235,0.28)" stroke-width="2" fill="none">
+        <path d="M40 40 H160 V120 H40 Z"/>
+        <path d="M240 80 H350 V180 H240 Z"/>
+        <path d="M90 170 H180 V230"/>
+      </g>
+      <g fill="#f4f1eb">
+        <circle cx="250" cy="92" r="4"/>
+        <circle cx="150" cy="168" r="4"/>
+        <circle cx="300" cy="150" r="4"/>
+        <circle cx="96" cy="86" r="4"/>
+      </g>
+    </svg>`;
+}
+
+function bind(root) {
+  root.querySelectorAll("[data-kind]").forEach(el => el.addEventListener("click", () => {
+    state.kind = el.dataset.kind;
+    render();
+  }));
+  root.querySelectorAll("[data-open]").forEach(el => el.addEventListener("click", () => {
+    state.offerId = el.dataset.open;
+    state.screen = "detail";
+    state.sheet = null;
+    render();
+  }));
+  root.querySelectorAll("[data-action]").forEach(el => el.addEventListener("click", () => onAction(el.dataset.action)));
+  root.querySelectorAll("[data-add]").forEach(el => el.addEventListener("click", (e) => {
+    e.stopPropagation();
+    togglePerson(el.dataset.add);
+  }));
+  root.querySelectorAll("[data-gkind]").forEach(el => el.addEventListener("click", () => {
+    state.groupKind = el.dataset.gkind;
+    state.kind = el.dataset.gkind;
+    render();
+  }));
+  root.querySelectorAll("[data-star]").forEach(el => el.addEventListener("click", () => {
+    state.review = Number(el.dataset.star);
+    state.reviewSent = true;
+    render();
+  }));
+  root.querySelectorAll("[data-exp]").forEach(el => el.addEventListener("click", () => {
+    state.experience = el.dataset.exp;
+    render();
+  }));
+  root.querySelectorAll("[data-field]").forEach(el => el.addEventListener("input", () => {
+    state.form[el.dataset.field] = el.value;
+  }));
+}
+
+function togglePerson(id) {
+  state.party = state.party.includes(id) ? state.party.filter(x => x !== id) : state.party.concat(id);
+  if (state.party.length) {
+    state.company = "group";
+    if (state.kind === "all") state.kind = state.groupKind;
+  } else if (state.company === "group") {
+    state.company = null;
+  }
+  render();
+}
+
+function onAction(action) {
+  if (action === "see-offers") { state.face = "guest"; state.screen = "home"; state.sheet = null; render(); return; }
+  if (action === "solo") {
+    state.company = "solo";
+    state.party = [];
+    state.kind = "all";
+    state.sheet = null;
+    render();
+    return;
+  }
+  if (action === "group") { state.sheet = "group"; render(); return; }
+  if (action === "close") {
+    state.sheet = null;
+    if (state.party.length) state.company = "group";
+    render();
+    return;
+  }
+  if (action === "with-three") {
+    state.party = COLLEAGUES.map(c => c.id);
+    state.company = "group";
+    state.kind = state.groupKind;
+    render();
+    return;
+  }
+  if (action === "back") { state.screen = "home"; state.sheet = null; render(); return; }
+  if (action === "home") { state.face = "guest"; state.screen = "home"; state.sheet = null; render(); return; }
+  if (action === "bookings") { state.screen = "bookings"; state.sheet = null; render(); return; }
+  if (action === "done") { state.screen = "done"; render(); return; }
+  if (action === "pay") {
+    const o = offerById(state.offerId);
+    if (state.seats[o.id] < partySize()) return;
+    state.sheet = "pay";
+    render();
+    return;
+  }
+  if (action === "confirm") {
+    const o = offerById(state.offerId);
+    const size = partySize();
+    if (state.seats[o.id] < size) return;
+    state.seats[o.id] -= size;
+    const names = COLLEAGUES.filter(c => state.party.includes(c.id)).map(c => c.name.split(" ")[0]);
+    state.booking = {
+      place: o.name,
+      time: o.time,
+      size,
+      total: o.price * size,
+      code: "FT-" + Math.floor(1400 + Math.random() * 800),
+      group: state.party.length ? (state.groupKind === "business" ? "Business lunch" : "Lunch group") : "",
+      with: names.join(", ")
+    };
+    state.review = 0;
+    state.reviewSent = false;
+    state.sheet = null;
+    state.screen = "done";
+    render();
+    return;
+  }
+  if (action === "publish") {
+    const qty = Number(String(state.form.qty).replace(/\D/g, "")) || 0;
+    const price = Number(String(state.form.price).replace(/\D/g, "")) || 0;
+    const seconds = Math.max(1, Math.round((Date.now() - (state.publishStarted || Date.now())) / 1000));
+    const label = state.experience === "business" ? "Business lunch" : "Lunch della casa";
+    const tempo = seconds === 1 ? "1 secondo" : seconds + " secondi";
+    state.published = label + " in sala. " + euro(price) + " · " + state.form.time + " · " + qty + " posti · scade " + state.form.until + ". " + tempo + ".";
+    render();
+  }
+}
+
+function restart() {
+  state.face = "guest";
+  state.screen = "intent";
+  state.kind = "all";
+  state.company = null;
+  state.party = [];
+  state.groupKind = "lunch";
+  state.offerId = null;
+  state.seats = Object.fromEntries(OFFERS.map(o => [o.id, o.seats]));
+  state.booking = null;
+  state.sheet = null;
+  state.review = 0;
+  state.reviewSent = false;
+  state.published = null;
+  state.publishStarted = null;
+  render();
+}
+
+document.getElementById("go-restart").addEventListener("click", restart);
+document.getElementById("go-sala").addEventListener("click", () => {
+  if (state.face === "sala") {
+    state.face = "guest";
+  } else {
+    state.face = "sala";
+    state.sheet = null;
+    if (!state.published) state.publishStarted = Date.now();
+  }
+  render();
+});
+
+render();
+</script>
+</body>
+</html>
