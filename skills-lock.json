@@ -1,0 +1,26 @@
+{
+  "version": 2,
+  "skills": {
+    "async-python-patterns": {
+      "source": "wshobson/agents",
+      "commit": "c96b5f6552dba32e4492307493ee613581430715",
+      "sourceType": "github",
+      "skillPath": "plugins/python-development/skills/async-python-patterns/SKILL.md",
+      "computedHash": "5ed4e3ea95b394323088b0754668d72d8d0f70905826be41bf3b440f71fa9f07"
+    },
+    "python-performance-optimization": {
+      "source": "wshobson/agents",
+      "commit": "c96b5f6552dba32e4492307493ee613581430715",
+      "sourceType": "github",
+      "skillPath": "plugins/python-development/skills/python-performance-optimization/SKILL.md",
+      "computedHash": "81a1369058d4089e208104bbfc384cd73eb6b62d654bda87cf33cb97ea296ccd"
+    },
+    "python-uv": {
+      "source": "Mindrally/skills",
+      "commit": "7682ca77710e0971eab4e0ae5dddfa281aea0ba5",
+      "sourceType": "github",
+      "skillPath": "python-uv/SKILL.md",
+      "computedHash": "e46928dbbeaa5c831b125fed97c750436ad6c2194f7a8e068b544a3c970ef2d4"
+    }
+  }
+}

@@ -1,0 +1,1 @@
+"""API modulo admin."""

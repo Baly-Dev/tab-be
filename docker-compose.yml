@@ -1,0 +1,135 @@
+# Stack locale di tab-be. Le porte host sono sfalsate rispetto a tn-be
+# così i due progetti possono stare accesi insieme.
+
+services:
+  tab-redis:
+    image: redis:7-alpine
+    container_name: tab-redis
+    ports:
+      - "${REDIS_PORT:-6380}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  tab-db:
+    image: postgres:16-alpine
+    container_name: tab-db
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-tab_be}
+    ports:
+      - "${DB_PORT:-5433}:5432"
+    volumes:
+      - tab_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  tab-be:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tab-be
+    environment:
+      DATABASE_URL: postgresql+psycopg://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@tab-db:5432/${DB_NAME:-tab_be}
+      APP_ENV: ${APP_ENV:-local}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      JWT_SECRET: ${JWT_SECRET:-}
+      JWT_ACCESS_TOKEN_EXPIRE_MINUTES: ${JWT_ACCESS_TOKEN_EXPIRE_MINUTES:-15}
+      JWT_REFRESH_TOKEN_EXPIRE_DAYS: ${JWT_REFRESH_TOKEN_EXPIRE_DAYS:-30}
+      EMAIL_VERIFY_TOKEN_EXPIRE_HOURS: ${EMAIL_VERIFY_TOKEN_EXPIRE_HOURS:-72}
+      BREVO_API_KEY: ${BREVO_API_KEY:-}
+      BREVO_EMAIL_VERIFICATION_TEMPLATE_ID: ${BREVO_EMAIL_VERIFICATION_TEMPLATE_ID:-0}
+      BREVO_EMAIL_VERIFICATION_LINK_PARAM: ${BREVO_EMAIL_VERIFICATION_LINK_PARAM:-verification_url}
+      BREVO_EMAIL_VERIFICATION_FIRST_NAME_PARAM: ${BREVO_EMAIL_VERIFICATION_FIRST_NAME_PARAM:-first_name}
+      BREVO_WELCOME_TEMPLATE_ID: ${BREVO_WELCOME_TEMPLATE_ID:-0}
+      BREVO_WELCOME_FIRST_NAME_PARAM: ${BREVO_WELCOME_FIRST_NAME_PARAM:-first_name}
+      BREVO_WELCOME_LINK_PARAM: ${BREVO_WELCOME_LINK_PARAM:-app_url}
+      EMAIL_SENDER_EMAIL: ${EMAIL_SENDER_EMAIL:-}
+      EMAIL_SENDER_NAME: ${EMAIL_SENDER_NAME:-Tab}
+      EMAIL_VERIFICATION_FRONTEND_URL: ${EMAIL_VERIFICATION_FRONTEND_URL:-http://localhost:3000/auth/verify-email}
+      PASSWORD_RESET_FRONTEND_URL: ${PASSWORD_RESET_FRONTEND_URL:-http://localhost:3000/reset-password}
+      PASSWORD_RESET_TOKEN_EXPIRE_MINUTES: ${PASSWORD_RESET_TOKEN_EXPIRE_MINUTES:-60}
+      PASSWORD_RESET_RATE_LIMIT_PER_HOUR: ${PASSWORD_RESET_RATE_LIMIT_PER_HOUR:-5}
+      BREVO_PASSWORD_RESET_TEMPLATE_ID: ${BREVO_PASSWORD_RESET_TEMPLATE_ID:-0}
+      BREVO_PASSWORD_RESET_LINK_PARAM: ${BREVO_PASSWORD_RESET_LINK_PARAM:-reset_url}
+      BREVO_PASSWORD_RESET_FIRST_NAME_PARAM: ${BREVO_PASSWORD_RESET_FIRST_NAME_PARAM:-first_name}
+      GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
+      GOOGLE_OAUTH_REDIRECT_URI: ${GOOGLE_OAUTH_REDIRECT_URI:-}
+      GOOGLE_OAUTH_FRONTEND_CALLBACK_URL: ${GOOGLE_OAUTH_FRONTEND_CALLBACK_URL:-}
+      LINKEDIN_OAUTH_CLIENT_ID: ${LINKEDIN_OAUTH_CLIENT_ID:-}
+      LINKEDIN_OAUTH_CLIENT_SECRET: ${LINKEDIN_OAUTH_CLIENT_SECRET:-}
+      LINKEDIN_OAUTH_REDIRECT_URI: ${LINKEDIN_OAUTH_REDIRECT_URI:-}
+      LINKEDIN_OAUTH_FRONTEND_CALLBACK_URL: ${LINKEDIN_OAUTH_FRONTEND_CALLBACK_URL:-}
+      WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:-localhost}
+      WEBAUTHN_RP_NAME: ${WEBAUTHN_RP_NAME:-Tab}
+      WEBAUTHN_ORIGIN: ${WEBAUTHN_ORIGIN:-http://localhost:3000}
+      WEBAUTHN_CHALLENGE_EXPIRE_MINUTES: ${WEBAUTHN_CHALLENGE_EXPIRE_MINUTES:-5}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-}
+      PUBLIC_API_URL: ${PUBLIC_API_URL:-http://127.0.0.1:8001}
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
+      STORAGE_LOCAL_DIR: ${STORAGE_LOCAL_DIR:-var/storage}
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-}
+      S3_REGION: ${S3_REGION:-auto}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+      S3_ADDRESSING_STYLE: ${S3_ADDRESSING_STYLE:-virtual}
+      REDIS_URL: redis://tab-redis:6379/0
+      REFRESH_TOKEN_STORE: ${REFRESH_TOKEN_STORE:-redis}
+    ports:
+      - "${TAB_BE_PORT:-8001}:8000"
+    volumes:
+      - .:/app
+    depends_on:
+      tab-db:
+        condition: service_healthy
+      tab-redis:
+        condition: service_healthy
+    command: >
+      uvicorn main:app
+      --host 0.0.0.0
+      --port 8000
+      --reload
+
+  pgadmin:
+    image: dpage/pgadmin4:8
+    container_name: tab-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@example.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-admin}
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+    ports:
+      - "${PGADMIN_PORT:-5051}:80"
+    volumes:
+      - tab_pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      tab-db:
+        condition: service_healthy
+
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: tab-redis-commander
+    restart: unless-stopped
+    environment:
+      REDIS_HOSTS: local:tab-redis:6379:0
+      HTTP_USER: ${REDIS_COMMANDER_USER:-admin}
+      HTTP_PASSWORD: ${REDIS_COMMANDER_PASSWORD:-admin}
+    ports:
+      - "${REDIS_COMMANDER_PORT:-8082}:8081"
+    depends_on:
+      tab-redis:
+        condition: service_healthy
+
+volumes:
+  tab_db_data:
+  tab_pgadmin_data:

@@ -1,0 +1,30 @@
+.cursor/
+.knowledge_base/
+docs/
+
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.development
+.env.test
+.env.production
+
+.DS_Store
+
+# Local object storage (STORAGE_BACKEND=local)
+var/storage/*
+!var/storage/.gitkeep
+
+# WP → TrustNet extract (raw dumps / generated datasets live outside git)
+scripts/wp_import/out/
+scripts/wp_import/data/
+
+# Python
+tn_be.egg-info/
+tab_be.egg-info/
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
