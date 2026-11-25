@@ -1,30 +1,117 @@
+# OS and editor junk
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+.TemporaryItems
+.DocumentRevisions-V100
+.apdisk
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*~
+.directory
+.nfs*
+
+.idea/
+.vscode/
+*.swp
+*.swo
+*.swn
 .cursor/
 .knowledge_base/
+
+# Office and binary documents
 docs/
+*.pdf
+*.doc
+*.docx
+*.xls
+*.xlsx
+*.xlsm
+*.ppt
+*.pptx
+*.odt
+*.ods
+*.odp
+*.pages
+*.numbers
+*.key
+*.rtf
+~$*
 
+# Secrets and local env
 .env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-.env.development
-.env.test
-.env.production
+.env.*
+!.env.example
+!.env.local.example
+!.env.*.example
+.sentryclirc
+*.pem
+*.p12
+*.pfx
 
-.DS_Store
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+downloads/
+eggs/
+.eggs/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+pip-log.txt
+pip-delete-this-directory.txt
+
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Tool caches and coverage
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyright/
+.dmypy.json
+dmypy.json
+.tox/
+.nox/
+.hypothesis/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.cover
+.cache/
+
+# Local runtime
+*.log
+logs/
+*.pid
+*.sqlite
+*.sqlite3
+dump.rdb
+celerybeat-schedule
+celerybeat.pid
 
 # Local object storage (STORAGE_BACKEND=local)
 var/storage/*
 !var/storage/.gitkeep
 
-# WP → TrustNet extract (raw dumps / generated datasets live outside git)
-scripts/wp_import/out/
-scripts/wp_import/data/
-
-# Python
-tn_be.egg-info/
-tab_be.egg-info/
-__pycache__/
-*.py[cod]
-*$py.class
-*.pyc
+# Local Docker overrides
+docker-compose.override.yml
+.docker/
