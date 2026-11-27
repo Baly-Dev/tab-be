@@ -160,7 +160,7 @@ class Settings(BaseSettings):
     google_oauth_frontend_callback_url: str = Field(
         default="http://localhost:3000/auth/google/callback",
         validation_alias="GOOGLE_OAUTH_FRONTEND_CALLBACK_URL",
-        description="Dopo OAuth, redirect browser con token in query (FE legge e pulisce URL).",
+        description="Dopo OAuth, redirect browser con handoff monouso nel fragment.",
     )
     google_oauth_state_expire_minutes: int = Field(
         default=10,
@@ -181,7 +181,7 @@ class Settings(BaseSettings):
     linkedin_oauth_frontend_callback_url: str = Field(
         default="http://localhost:3000/auth/linkedin/callback",
         validation_alias="LINKEDIN_OAUTH_FRONTEND_CALLBACK_URL",
-        description="Dopo OAuth LinkedIn, redirect browser con token in query.",
+        description="Dopo OAuth LinkedIn, redirect browser con handoff monouso nel fragment.",
     )
     linkedin_oauth_state_expire_minutes: int = Field(
         default=10,

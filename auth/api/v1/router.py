@@ -6,6 +6,7 @@ from auth.api.v1 import (
     google_oauth,
     linkedin_oauth,
     login,
+    oauth_handoff,
     passkeys,
     password_reset,
     signup,
@@ -21,6 +22,7 @@ router.include_router(account.router)
 router.include_router(social_accounts.router)
 router.include_router(passkeys.router)
 router.include_router(login.router)
+router.include_router(oauth_handoff.router)
 router.include_router(google_oauth.router)
 router.include_router(linkedin_oauth.router)
 router.include_router(delete_user.router)

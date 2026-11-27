@@ -188,7 +188,7 @@ class GoogleOAuthService:
         )
 
     def build_frontend_redirect_url(self, result: GoogleSignInResult) -> str:
-        """Redirect verso FE con token in query."""
+        """Redirect verso FE con handoff monouso nel fragment."""
         return build_frontend_redirect_url(
             self._settings.google_oauth_frontend_callback_url,
             result,

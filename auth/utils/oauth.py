@@ -24,6 +24,7 @@ from auth.errors.oauth_errors import (
 from auth.models.social_account import AuthSocialAccount
 from auth.models.user import AuthUser
 from auth.schemas.login import TokenResponse
+from auth.utils.oauth_handoff import handoff_redirect_url, issue_oauth_handoff
 from auth.utils.registration import is_registration_complete
 from auth.utils.session import build_token_response
 from auth.utils.tokens import _require_secret
@@ -170,22 +171,14 @@ def build_frontend_redirect_url(
     frontend_base: str,
     result: OAuthSignInResult,
 ) -> str:
-    """Redirect verso FE con token in query (stesso shape del login)."""
-    base = frontend_base.strip()
-    tr = result.token_response
-    params = {
-        "access_token": tr.access_token,
-        "refresh_token": tr.refresh_token,
-        "token_type": tr.token_type,
-        "expires_in": str(tr.expires_in),
-        "oauth_status": result.oauth_status,
-        "user_id": str(tr.user.id),
-        "email": tr.user.email,
-        "username": tr.user.username,
-        "status": tr.user.status,
-    }
-    sep = "&" if "?" in base else "?"
-    return f"{base}{sep}{urlencode(params)}"
+    """Redirect al FE con un codice monouso nel fragment, non i token in query."""
+    code = issue_oauth_handoff(
+        {
+            "oauth_status": result.oauth_status,
+            **result.token_response.model_dump(mode="json"),
+        }
+    )
+    return handoff_redirect_url(frontend_base, code)
 
 
 def complete_social_sign_in(

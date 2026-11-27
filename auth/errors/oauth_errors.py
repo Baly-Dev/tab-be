@@ -45,8 +45,38 @@ class OAuthAccountError(OAuthSignInError):
         super().__init__(message)
 
 
+class OAuthHandoffUnavailableError(OAuthSignInError):
+    """Redis non disponibile: il redirect non può consegnare la sessione."""
+
+    def __init__(self, message: str = "OAuth handoff is temporarily unavailable") -> None:
+        self.message = message
+        super().__init__(message)
+
+
+def http_error_invalid_oauth_handoff() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail={
+            "code": "invalid_oauth_handoff",
+            "message": "Invalid or expired OAuth handoff",
+        },
+    )
+
+
+def http_error_oauth_handoff_unavailable() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail={
+            "code": "oauth_handoff_unavailable",
+            "message": "OAuth handoff is temporarily unavailable",
+        },
+    )
+
+
 def http_error_from_oauth(exc: OAuthSignInError, *, provider_label: str) -> HTTPException:
     """Mappa eccezione OAuth su ``HTTPException`` con ``code`` strutturato."""
+    if isinstance(exc, OAuthHandoffUnavailableError):
+        return http_error_oauth_handoff_unavailable()
     if isinstance(exc, OAuthNotConfiguredError):
         return HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
