@@ -6,25 +6,25 @@ from collections.abc import Callable
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.models.user import AuthUser
 from auth.utils.helpers import AuthenticatedUser, get_current_user
 from config.constants import AppRole
-from config.db.session import get_db
+from config.db import get_async_db
 from core.permissions import Permission, user_has_permission
 from core.utils.roles import load_user_roles
 
 
-def require_permission(permission: Permission) -> Callable[..., AuthUser]:
+async def require_permission(permission: Permission) -> Callable[..., AuthUser]:
     """Factory: dependency che richiede ``permission`` oltre all'autenticazione."""
 
-    def _dependency(
+    async def _dependency(
         user: AuthenticatedUser,
-        db: Session = Depends(get_db),
+        db: AsyncSession = Depends(get_async_db),
     ) -> AuthUser:
         """Verifica permesso; 403 con codice stabile per il FE."""
-        if not user_has_permission(db, user.id, permission):
+        if not await user_has_permission(db, user.id, permission):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail={
@@ -43,14 +43,14 @@ AdminWriteUser = Annotated[AuthUser, Depends(require_permission(Permission.ADMIN
 AdminLogsUser = Annotated[AuthUser, Depends(require_permission(Permission.ADMIN_LOGS))]
 
 
-def require_super_admin() -> Callable[..., AuthUser]:
+async def require_super_admin() -> Callable[..., AuthUser]:
     """Solo ``super_admin`` (audience CRM, export sensibili, ecc.)."""
 
-    def _dependency(
+    async def _dependency(
         user: AuthenticatedUser,
-        db: Session = Depends(get_db),
+        db: AsyncSession = Depends(get_async_db),
     ) -> AuthUser:
-        if AppRole.SUPER_ADMIN.value not in load_user_roles(db, user.id):
+        if AppRole.SUPER_ADMIN.value not in await load_user_roles(db, user.id):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail={

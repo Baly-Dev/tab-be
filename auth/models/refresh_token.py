@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import uuid
+from datetime import datetime
 
 from sqlalchemy import Column, DateTime, ForeignKey, Text
 from sqlalchemy.dialects.postgresql import UUID
@@ -27,3 +30,14 @@ class AuthRefreshToken(Base):
         server_default=func.now(),
     )
     revoked_at = Column(DateTime(timezone=True), nullable=True)
+
+    @property
+    def is_revoked(self) -> bool:
+        return self.revoked_at is not None
+
+    def is_valid_at(self, when: datetime) -> bool:
+        return not self.is_revoked and self.expires_at > when
+
+    def revoke(self, when: datetime) -> None:
+        if self.revoked_at is None:
+            self.revoked_at = when

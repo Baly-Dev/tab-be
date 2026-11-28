@@ -8,7 +8,7 @@ from typing import Annotated
 import jwt
 from fastapi import Depends, Request, Security
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.errors.session_errors import (
     http_error_access_token_expired,
@@ -28,7 +28,7 @@ from auth.utils.passwords import (
 )
 from auth.utils.tokens import decode_access_token
 from config import UserStatus
-from config.db.session import get_db
+from config.db import get_async_db
 
 # Opzionale (auto_error=False): usato da get_current_user con fallback su Request.
 bearer_scheme = HTTPBearer(
@@ -54,7 +54,12 @@ def _extract_bearer_token(authorization: str | None) -> str | None:
     return text
 
 
-def user_from_access_token(raw: str, db: Session, *, require_active: bool = True) -> AuthUser:
+async def user_from_access_token(
+    raw: str,
+    db: AsyncSession,
+    *,
+    require_active: bool = True,
+) -> AuthUser:
     """Valida JWT access e carica utente; se ``require_active``, solo ACTIVE."""
     token = raw.strip()
     if token.count(".") != 2:
@@ -71,7 +76,7 @@ def user_from_access_token(raw: str, db: Session, *, require_active: bool = True
     except (KeyError, ValueError) as exc:
         raise http_error_invalid_access_token_payload() from exc
 
-    user = db.get(AuthUser, uid)
+    user = await db.get(AuthUser, uid)
     if user is None:
         raise http_error_bearer_user_not_found()
     if user.status in (UserStatus.SUSPENDED, UserStatus.DELETED):
@@ -81,13 +86,13 @@ def user_from_access_token(raw: str, db: Session, *, require_active: bool = True
     return user
 
 
-def get_current_user(
+async def get_current_user(
     request: Request,
     credentials: Annotated[
         HTTPAuthorizationCredentials | None,
         Security(bearer_scheme),
     ] = None,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
 ) -> AuthUser:
     """Per route protette generiche: Bearer via Authorize o header Authorization."""
     raw: str | None = None
@@ -100,16 +105,16 @@ def get_current_user(
                 break
     if not raw:
         raise http_error_not_authenticated(docs_hint=True)
-    return user_from_access_token(raw, db)
+    return await user_from_access_token(raw, db)
 
 
-def get_authenticated_user(
+async def get_authenticated_user(
     request: Request,
     credentials: Annotated[
         HTTPAuthorizationCredentials | None,
         Security(bearer_scheme),
     ] = None,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
 ) -> AuthUser:
     """Bearer valido; consente ``PENDING`` (es. GET /core/me durante onboarding)."""
     raw: str | None = None
@@ -122,7 +127,7 @@ def get_authenticated_user(
                 break
     if not raw:
         raise http_error_not_authenticated()
-    return user_from_access_token(raw, db, require_active=False)
+    return await user_from_access_token(raw, db, require_active=False)
 
 
 AuthenticatedUser = Annotated[AuthUser, Depends(get_current_user)]

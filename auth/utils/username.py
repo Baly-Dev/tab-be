@@ -6,7 +6,7 @@ import random
 import re
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.models.user import AuthUser
 
@@ -19,8 +19,8 @@ def _normalize_name_part(s: str) -> str:
     return re.sub(r"[^a-z]", "", s.strip().lower())
 
 
-def generate_unique_username(
-    db: Session,
+async def generate_unique_username(
+    db: AsyncSession,
     email: str | None = None,
     *,
     first_name: str | None = None,
@@ -47,7 +47,7 @@ def generate_unique_username(
         candidate = f"{base}_{digits}"
         if (
             _USERNAME_RE.fullmatch(candidate)
-            and db.scalar(select(AuthUser.id).where(AuthUser.username == candidate)) is None
+            and await db.scalar(select(AuthUser.id).where(AuthUser.username == candidate)) is None
         ):
             return candidate
 
@@ -57,7 +57,7 @@ def generate_unique_username(
         candidate = f"{base}_{suffix}"[:32]
         if (
             _USERNAME_RE.fullmatch(candidate)
-            and db.scalar(select(AuthUser.id).where(AuthUser.username == candidate)) is None
+            and await db.scalar(select(AuthUser.id).where(AuthUser.username == candidate)) is None
         ):
             return candidate
 

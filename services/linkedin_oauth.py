@@ -9,7 +9,7 @@ from typing import Any
 from urllib.parse import urlencode
 
 import httpx
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import OAuthProvider, Settings, get_settings
 from auth.errors.oauth_errors import (
@@ -73,8 +73,11 @@ class LinkedInOAuthService:
         if not self.is_configured:
             raise LinkedInOAuthNotConfigured("LinkedIn OAuth is not configured")
 
-    def _http_client(self) -> httpx.Client:
+    def _http_client_sync(self) -> httpx.Client:
         return httpx.Client(timeout=30.0)
+
+    def _http_client(self) -> httpx.AsyncClient:
+        return httpx.AsyncClient(timeout=30.0)
 
     def create_oauth_state(self) -> str:
         """JWT firmato anti-CSRF (``typ=linkedin_oauth_state``)."""
@@ -120,7 +123,7 @@ class LinkedInOAuthService:
         }
         return f"{LINKEDIN_AUTH_URL}?{urlencode(params)}"
 
-    def exchange_code_for_tokens(self, code: str) -> dict[str, Any]:
+    async def exchange_code_for_tokens(self, code: str) -> dict[str, Any]:
         """Scambia authorization code con token LinkedIn."""
         self._require_configured()
         data = {
@@ -130,8 +133,8 @@ class LinkedInOAuthService:
             "redirect_uri": self._settings.linkedin_oauth_redirect_uri.strip(),
             "grant_type": "authorization_code",
         }
-        with self._http_client() as client:
-            response = client.post(
+        async with self._http_client() as client:
+            response = await client.post(
                 LINKEDIN_TOKEN_URL,
                 data=data,
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
@@ -141,10 +144,10 @@ class LinkedInOAuthService:
             raise LinkedInOAuthExchangeError("Failed to exchange authorization code")
         return response.json()
 
-    def fetch_user_profile(self, access_token: str) -> LinkedInUserProfile:
+    async def fetch_user_profile(self, access_token: str) -> LinkedInUserProfile:
         """Recupera profilo da LinkedIn userinfo (OpenID Connect)."""
-        with self._http_client() as client:
-            response = client.get(
+        async with self._http_client() as client:
+            response = await client.get(
                 LINKEDIN_USERINFO_URL,
                 headers={"Authorization": f"Bearer {access_token.strip()}"},
             )
@@ -153,31 +156,31 @@ class LinkedInOAuthService:
             raise LinkedInOAuthExchangeError("Failed to fetch LinkedIn user profile")
         return self._parse_user_profile(response.json())
 
-    def fetch_profile_for_code(self, code: str) -> LinkedInUserProfile:
+    async def fetch_profile_for_code(self, code: str) -> LinkedInUserProfile:
         """Code → token LinkedIn → userinfo normalizzato."""
-        token_payload = self.exchange_code_for_tokens(code)
+        token_payload = await self.exchange_code_for_tokens(code)
         access = (token_payload.get("access_token") or "").strip()
         if not access:
             raise LinkedInOAuthExchangeError("LinkedIn did not return an access token")
-        return self.fetch_user_profile(access)
+        return await self.fetch_user_profile(access)
 
-    def sign_in_with_code(self, db: Session, *, code: str, state: str) -> LinkedInSignInResult:
+    async def sign_in_with_code(self, db: AsyncSession, *, code: str, state: str) -> LinkedInSignInResult:
         """Flusso completo: valida state, profilo LinkedIn, utente DB, token Trustnet."""
         self.verify_oauth_state(state)
-        profile = self.fetch_profile_for_code(code)
-        return complete_social_sign_in(
+        profile = await self.fetch_profile_for_code(code)
+        return await complete_social_sign_in(
             db,
             provider=OAuthProvider.LINKEDIN,
             profile=profile,
             provider_label=PROVIDER_LABEL,
         )
 
-    def link_with_code(self, db: Session, *, code: str, state: str) -> None:
+    async def link_with_code(self, db: AsyncSession, *, code: str, state: str) -> None:
         """Collega LinkedIn all'utente indicato nello state (senza nuova sessione)."""
         payload = verify_oauth_state(token_typ=TOKEN_TYP_LINKEDIN_OAUTH_LINK, state=state)
         user_id = oauth_state_subject(payload)
-        profile = self.fetch_profile_for_code(code)
-        complete_social_link(
+        profile = await self.fetch_profile_for_code(code)
+        await complete_social_link(
             db,
             user_id=user_id,
             provider=OAuthProvider.LINKEDIN,
@@ -185,9 +188,9 @@ class LinkedInOAuthService:
             provider_label=PROVIDER_LABEL,
         )
 
-    def build_frontend_redirect_url(self, result: LinkedInSignInResult) -> str:
+    async def build_frontend_redirect_url(self, result: LinkedInSignInResult) -> str:
         """Redirect verso FE con handoff monouso nel fragment."""
-        return build_frontend_redirect_url(
+        return await build_frontend_redirect_url(
             self._settings.linkedin_oauth_frontend_callback_url,
             result,
         )

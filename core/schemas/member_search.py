@@ -26,7 +26,7 @@ class MemberSearchItem(BaseModel):
     )
     is_connector: bool = Field(
         default=False,
-        description="True se l'utente ha ruolo connector (profilo ambassador).",
+        description="Sempre false. Il badge host arriverà sul tavolo, non sul ruolo account.",
     )
 
 

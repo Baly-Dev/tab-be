@@ -8,11 +8,10 @@ from urllib.parse import urlparse
 
 import httpx
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.models.profile import CoreProfile
 from core.models.user_interest import CoreUserInterest
-from core.utils.update_me import refresh_profile_completeness
 from services.images import process_avatar
 from services.storage import get_storage_service, key_from_public_url
 
@@ -35,28 +34,28 @@ def provider_picture_allowed(url: str | None) -> bool:
     return _allowed_host(_hostname(raw))
 
 
-def apply_provider_avatar(db: Session, profile: CoreProfile, picture_url: str | None) -> bool:
+async def apply_provider_avatar(db: AsyncSession, profile: CoreProfile, picture_url: str | None) -> bool:
     """Sostituisce un avatar esterno con la copia nel bucket.
 
     Non tocca una foto già salvata sotto ``/media/``. Se il download fallisce
     lascia ``avatar_url`` invariato e restituisce False.
     """
     raw = (picture_url or "").strip()
-    if not raw or is_managed_avatar_url(profile.avatar_url):
+    if not raw or profile.has_managed_avatar:
         return False
     stored = mirror_remote_avatar(profile.user_id, raw)
     if not stored:
         return False
     profile.avatar_url = stored
     has_interests = (
-        db.scalar(
+        await db.scalar(
             select(CoreUserInterest.interest_id)
             .where(CoreUserInterest.user_id == profile.user_id)
             .limit(1)
         )
         is not None
     )
-    refresh_profile_completeness(profile, has_interests)
+    profile.refresh_completeness(has_interests=has_interests)
     db.add(profile)
     return True
 

@@ -7,9 +7,9 @@ from collections import defaultdict
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from config.db.session import get_db
+from config.db import get_async_db
 from core.models.interest import CoreInterest
 from core.models.interest_category import CoreInterestCategory
 from core.schemas.interest import InterestCategoryGroup, InterestItem, InterestListResponse
@@ -18,19 +18,19 @@ router = APIRouter()
 
 
 @router.get("", response_model=InterestListResponse)
-def list_interests(db: Session = Depends(get_db)) -> InterestListResponse:
+async def list_interests(db: AsyncSession = Depends(get_async_db)) -> InterestListResponse:
     """Interessi attivi raggruppati per categoria (ordinamento ``sort_order``, poi nome)."""
-    categories = db.scalars(
+    categories = (await db.scalars(
         select(CoreInterestCategory).order_by(
             CoreInterestCategory.sort_order,
             CoreInterestCategory.name,
         )
-    ).all()
-    interests = db.scalars(
+    )).all()
+    interests = (await db.scalars(
         select(CoreInterest)
         .where(CoreInterest.is_active.is_(True))
         .order_by(CoreInterest.sort_order, CoreInterest.name)
-    ).all()
+    )).all()
 
     by_category: dict[uuid.UUID, list[InterestItem]] = defaultdict(list)
     uncategorized: list[InterestItem] = []

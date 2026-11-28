@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import RedirectResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.errors.oauth_errors import OAuthSignInError, OAuthStateError, http_error_from_oauth
 from auth.schemas.google_oauth import (
@@ -13,7 +13,8 @@ from auth.schemas.google_oauth import (
     GoogleSignInResponse,
 )
 from auth.utils.oauth import decode_oauth_state, oauth_link_error_code
-from config.db.session import get_db
+from auth.utils.rate_limit import require_ip_limit
+from config.db import get_async_db
 from services.google_oauth import (
     TOKEN_TYP_GOOGLE_OAUTH_LINK,
     TOKEN_TYP_GOOGLE_OAUTH_STATE,
@@ -26,8 +27,9 @@ _PROVIDER_LABEL = "Google"
 
 
 @router.get("/google/authorize", response_model=GoogleAuthorizeResponse)
-def google_authorize(
+async def google_authorize(
     google: GoogleOAuthService = Depends(get_google_oauth_service),
+    _: None = Depends(require_ip_limit("oauth")),
 ) -> GoogleAuthorizeResponse:
     """Restituisce URL Google e ``state`` (CSRF). Il FE reindirizza l'utente a ``authorization_url``."""
     try:
@@ -41,22 +43,23 @@ def google_authorize(
 
 
 @router.get("/google/callback")
-def google_callback(
+async def google_callback(
     code: str = Query(min_length=1),
     state: str = Query(min_length=10),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     google: GoogleOAuthService = Depends(get_google_oauth_service),
+    _: None = Depends(require_ip_limit("oauth")),
 ) -> RedirectResponse:
     """Callback Google (redirect URI backend): sign-in o link da Settings."""
     state_typ: str | None = None
     try:
         state_typ = str(decode_oauth_state(state).get("typ") or "")
         if state_typ == TOKEN_TYP_GOOGLE_OAUTH_LINK:
-            google.link_with_code(db, code=code, state=state)
+            await google.link_with_code(db, code=code, state=state)
             redirect_url = google.build_frontend_link_redirect_url()
         elif state_typ == TOKEN_TYP_GOOGLE_OAUTH_STATE:
-            result = google.sign_in_with_code(db, code=code, state=state)
-            redirect_url = google.build_frontend_redirect_url(result)
+            result = await google.sign_in_with_code(db, code=code, state=state)
+            redirect_url = await google.build_frontend_redirect_url(result)
         else:
             raise OAuthStateError("Invalid OAuth state type")
     except OAuthSignInError as exc:
@@ -70,14 +73,15 @@ def google_callback(
 
 
 @router.post("/google/sign-in", response_model=GoogleSignInResponse)
-def google_sign_in(
+async def google_sign_in(
     body: GoogleSignInRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     google: GoogleOAuthService = Depends(get_google_oauth_service),
+    _: None = Depends(require_ip_limit("oauth")),
 ) -> GoogleSignInResponse:
     """Sign-in con code + state (JSON, senza redirect browser verso il FE)."""
     try:
-        result = google.sign_in_with_code(db, code=body.code, state=body.state)
+        result = await google.sign_in_with_code(db, code=body.code, state=body.state)
     except OAuthSignInError as exc:
         raise http_error_from_oauth(exc, provider_label=_PROVIDER_LABEL)
     return GoogleSignInResponse(

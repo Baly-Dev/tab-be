@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.models.user import AuthUser
 from auth.schemas.login import AuthUserBrief, TokenResponse
@@ -14,22 +14,22 @@ from auth.utils.tokens import (
 from core.utils.roles import load_user_roles
 
 
-def issue_token_pair(db: Session, user: AuthUser) -> tuple[str, str, int]:
+async def issue_token_pair(db: AsyncSession, user: AuthUser) -> tuple[str, str, int]:
     """Crea access JWT + refresh opaco persistito; ritorna (access, refresh_plain, expires_in)."""
-    roles = load_user_roles(db, user.id)
+    roles = await load_user_roles(db, user.id)
     access, expires_in = create_access_token(
         user_id=user.id,
         email=str(user.email),
         roles=roles,
     )
     refresh_plain = generate_refresh_token_plain()
-    persist_refresh_token(db, user_id=user.id, plain=refresh_plain)
+    await persist_refresh_token(db, user_id=user.id, plain=refresh_plain)
     return access, refresh_plain, expires_in
 
 
-def build_token_response(db: Session, user: AuthUser) -> TokenResponse:
+async def build_token_response(db: AsyncSession, user: AuthUser) -> TokenResponse:
     """Risposta token come login (prima del commit della sessione DB)."""
-    access, refresh_plain, expires_in = issue_token_pair(db, user)
+    access, refresh_plain, expires_in = await issue_token_pair(db, user)
     return TokenResponse(
         access_token=access,
         refresh_token=refresh_plain,

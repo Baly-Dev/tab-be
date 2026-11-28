@@ -15,11 +15,15 @@ _OPTIONAL_PROFILE_STR_FIELDS = (
     "gender",
     "residence_country",
     "residence_city",
+    "office_city",
+    "office_neighborhood",
     "bio",
     "avatar_url",
     "current_company_name",
     "current_job_position",
     "linkedin_url",
+    "preferred_cuisine",
+    "dietary_notes",
 )
 
 
@@ -36,11 +40,18 @@ class UpdateMeRequest(BaseModel):
     gender: str | None = Field(default=None, max_length=100)
     residence_country: str | None = Field(default=None, max_length=200)
     residence_city: str | None = Field(default=None, max_length=200)
+    office_city: str | None = Field(default=None, max_length=200)
+    office_neighborhood: str | None = Field(default=None, max_length=200)
     bio: str | None = Field(default=None, max_length=2000)
     avatar_url: PublicMediaUrl = Field(default=None, max_length=2000)
     current_company_name: str | None = Field(default=None, max_length=300)
     current_job_position: str | None = Field(default=None, max_length=300)
     linkedin_url: str | None = Field(default=None, max_length=2000)
+    preferred_cuisine: str | None = Field(default=None, max_length=200)
+    preferred_price_band: str | None = Field(default=None, max_length=8)
+    max_distance_meters: int | None = Field(default=None, ge=0, le=50_000)
+    dietary_notes: str | None = Field(default=None, max_length=500)
+    prefers_meal_vouchers: bool | None = None
     interest_ids: list[uuid.UUID] | None = Field(
         default=None,
         max_length=64,

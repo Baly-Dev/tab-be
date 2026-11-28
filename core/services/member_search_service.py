@@ -6,7 +6,7 @@ import re
 import uuid
 
 from sqlalchemy import and_, func, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.models.user import AuthUser
 from config.constants import ConnectionStatus
@@ -19,7 +19,6 @@ from core.services.member_search_policy import (
     apply_member_search_visibility,
     assert_member_search_allowed,
 )
-from core.utils.roles import load_connector_user_ids
 
 _MIN_QUERY_LEN = 2
 _MAX_QUERY_LEN = 64
@@ -48,8 +47,8 @@ def escape_like_pattern(value: str) -> str:
     return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
-def search_members(
-    db: Session,
+async def search_members(
+    db: AsyncSession,
     viewer: AuthUser,
     *,
     query: str,
@@ -79,9 +78,9 @@ def search_members(
     visible_query = apply_member_search_visibility(base_query, context=context)
 
     count_query = select(func.count()).select_from(visible_query.subquery())
-    total = int(db.scalar(count_query) or 0)
+    total = int(await db.scalar(count_query) or 0)
 
-    rows = db.execute(
+    rows = await db.execute(
         visible_query.order_by(
             CoreProfile.first_name.asc(),
             CoreProfile.last_name.asc(),
@@ -92,30 +91,29 @@ def search_members(
     ).all()
 
     user_ids = [user_row.id for user_row, _ in rows]
-    connection_status_by_user = _load_connection_statuses(db, context.viewer_id, user_ids)
-    connector_ids = load_connector_user_ids(db, user_ids)
+    connection_status_by_user = await _load_connection_statuses(db, context.viewer_id, user_ids)
 
     items = [
         _row_to_search_item(
             user_row,
             profile_row,
             connection_status_by_user.get(user_row.id),
-            user_row.id in connector_ids,
+            False,
         )
         for user_row, profile_row in rows
     ]
     return MemberSearchResponse(query=normalized, items=items, total=total)
 
 
-def _load_connection_statuses(
-    db: Session,
+async def _load_connection_statuses(
+    db: AsyncSession,
     viewer_id: uuid.UUID,
     peer_ids: list[uuid.UUID],
 ) -> dict[uuid.UUID, ConnectionStatus]:
     """Mappa peer_id → status connessione con il viewer (batch)."""
     if not peer_ids:
         return {}
-    rows = db.scalars(
+    rows = (await db.scalars(
         select(CoreProfileConnection).where(
             or_(
                 and_(
@@ -128,7 +126,7 @@ def _load_connection_statuses(
                 ),
             ),
         ),
-    ).all()
+    )).all()
     statuses: dict[uuid.UUID, ConnectionStatus] = {}
     for row in rows:
         peer_id = row.user_high_id if row.user_low_id == viewer_id else row.user_low_id

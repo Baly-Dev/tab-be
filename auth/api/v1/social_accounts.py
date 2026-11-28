@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.errors.account_errors import (
     http_error_cannot_unlink_last_login,
@@ -17,7 +17,7 @@ from auth.schemas.social_accounts import LinkSocialAuthorizeResponse, UnlinkSoci
 from auth.utils.helpers import AuthenticatedUser
 from auth.utils.login_methods import count_login_methods
 from config import OAuthProvider
-from config.db.session import get_db
+from config.db import get_async_db
 from services.google_oauth import GoogleOAuthService, get_google_oauth_service
 from services.linkedin_oauth import LinkedInOAuthService, get_linkedin_oauth_service
 
@@ -61,13 +61,13 @@ def authorize_social_link(
     response_model=UnlinkSocialAccountResponse,
     summary="Scollega un provider OAuth dall'account corrente",
 )
-def unlink_social_account(
+async def unlink_social_account(
     provider: OAuthProvider,
     user: AuthenticatedUser,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
 ) -> UnlinkSocialAccountResponse:
     """Rimuove la riga ``auth_social_accounts``. Non consente di restare senza metodi di accesso."""
-    social = db.scalar(
+    social = await db.scalar(
         select(AuthSocialAccount).where(
             AuthSocialAccount.user_id == user.id,
             AuthSocialAccount.provider == provider,
@@ -79,11 +79,11 @@ def unlink_social_account(
     if count_login_methods(db, user, exclude_provider=provider) < 1:
         raise http_error_cannot_unlink_last_login()
 
-    db.delete(social)
+    await db.delete(social)
     try:
-        db.commit()
+        await db.commit()
     except Exception as exc:
-        db.rollback()
+        await db.rollback()
         raise http_error_unlink_social_account_failed() from exc
 
     return UnlinkSocialAccountResponse(disconnected=True, provider=provider.value)

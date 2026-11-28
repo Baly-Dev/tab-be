@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import uuid
+from typing import Any
 
 from sqlalchemy import Column, DateTime, Enum, ForeignKey, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import CITEXT, JSONB, UUID
@@ -46,3 +49,13 @@ class AuthSocialAccount(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
+
+    def sync_provider_profile(
+        self,
+        *,
+        email: str | None,
+        raw_profile: dict[str, Any] | None,
+    ) -> None:
+        """Aggiorna snapshot email e payload grezzo dal provider."""
+        self.email = email
+        self.raw_profile = raw_profile

@@ -1,15 +1,13 @@
 """
 ORM shim: ``Base`` + modelli per Alembic e import legacy ``from db import …``.
 
-- Modelli: ``auth.models``, ``core.models``, ``admin.models``, ``notifications.models``
+- Modelli: ``auth.models``, ``core.models`` (``admin`` e ``notifications`` in scaffolding)
 - Enum: ``config.constants``
 - ``Base``: ``config.db``
 """
 
-import admin.models  # noqa: F401 — registra i mapper Admin su ``Base.metadata``.
 import auth.models  # noqa: F401 — registra i mapper Auth su ``Base.metadata``.
 import core.models  # noqa: F401 — registra i mapper Core su ``Base.metadata``.
-import notifications.models  # noqa: F401 — registra i mapper Notifications su ``Base.metadata``.
 
 from auth.models import (
     AuthPasswordResetToken,
@@ -22,21 +20,34 @@ from config.constants import (
     AppRole,
     ConnectionStatus,
     Gender,
-    NotificationType,
     OAuthProvider,
     UserStatus,
 )
 from config.db import Base
 from core.models import (
+    CoreVenueShift,
+    CoreVenueShiftOverride,
+    CoreBooking,
+    CoreGroup,
+    CoreGroupInvite,
+    CoreGroupMember,
     CoreInterest,
     CoreInterestCategory,
+    CoreOrganization,
+    CoreOrganizationAffiliation,
     CoreProfile,
+    CoreOrder,
     CoreProfileConnection,
     CoreUserInterest,
     CoreUserRole,
+    CoreVenue,
+    CoreVenueImage,
+    CoreVenueMembership,
+    CoreVenueMenu,
+    CoreVenueMenuImage,
+    CoreVenueMenuWindow,
 )
 from core.utils.connections import ordered_profile_connection_pair
-from notifications.models import Notification
 
 __all__ = [
     "AppRole",
@@ -47,15 +58,28 @@ __all__ = [
     "AuthWebAuthnCredential",
     "Base",
     "ConnectionStatus",
+    "CoreVenueShift",
+    "CoreVenueShiftOverride",
+    "CoreBooking",
+    "CoreGroup",
+    "CoreGroupInvite",
+    "CoreGroupMember",
     "CoreInterest",
     "CoreInterestCategory",
+    "CoreOrganization",
+    "CoreOrganizationAffiliation",
     "CoreProfile",
+    "CoreOrder",
     "CoreProfileConnection",
     "CoreUserInterest",
     "CoreUserRole",
+    "CoreVenue",
+    "CoreVenueImage",
+    "CoreVenueMembership",
+    "CoreVenueMenu",
+    "CoreVenueMenuImage",
+    "CoreVenueMenuWindow",
     "Gender",
-    "Notification",
-    "NotificationType",
     "OAuthProvider",
     "UserStatus",
     "ordered_profile_connection_pair",

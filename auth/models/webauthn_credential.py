@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import uuid
+from datetime import datetime
 
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, Text
 from sqlalchemy.dialects.postgresql import ARRAY, BYTEA, UUID
@@ -32,3 +35,6 @@ class AuthWebAuthnCredential(Base):
         server_default=func.now(),
     )
     last_used_at = Column(DateTime(timezone=True), nullable=True)
+
+    def record_use(self, when: datetime) -> None:
+        self.last_used_at = when

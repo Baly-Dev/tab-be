@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from sqlalchemy import delete
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.models.social_account import AuthSocialAccount
 from auth.models.user import AuthUser
@@ -19,13 +19,13 @@ class AccountPurgeError(Exception):
         super().__init__(message)
 
 
-def purge_auth_user(db: Session, user: AuthUser) -> None:
+async def purge_auth_user(db: AsyncSession, user: AuthUser) -> None:
     """Elimina l'utente dal DB.
 
-    Prima rimuove avatar, snapshot nelle notifiche e identificativi negli audit log.
+    Prima rimuove gli avatar in storage gestito.
     """
     user_id = user.id
-    erase_retained_personal_data(db, user)
-    db.execute(delete(AuthSocialAccount).where(AuthSocialAccount.user_id == user_id))
-    revoke_all_refresh_tokens_for_user(db, user_id)
-    db.delete(user)
+    await erase_retained_personal_data(db, user)
+    await db.execute(delete(AuthSocialAccount).where(AuthSocialAccount.user_id == user_id))
+    await revoke_all_refresh_tokens_for_user(db, user_id)
+    await db.delete(user)

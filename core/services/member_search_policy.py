@@ -6,7 +6,7 @@ import uuid
 from dataclasses import dataclass
 
 from sqlalchemy import Select, and_, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.models.user import AuthUser
 from auth.utils.registration import is_registration_complete
@@ -24,16 +24,16 @@ class MemberSearchContext:
     viewer_id: uuid.UUID
 
 
-def assert_member_search_allowed(db: Session, viewer: AuthUser) -> MemberSearchContext:
+async def assert_member_search_allowed(db: AsyncSession, viewer: AuthUser) -> MemberSearchContext:
     """Verifica che il viewer possa usare la ricerca membri.
 
     Estendere qui rate limiting, ruoli aggiuntivi o feature flags.
     """
-    if not user_has_permission(db, viewer.id, Permission.MEMBERS_SEARCH):
+    if not await user_has_permission(db, viewer.id, Permission.MEMBERS_SEARCH):
         raise SearchNotAllowedError
     if viewer.status != UserStatus.ACTIVE:
         raise SearchNotAllowedError("Account is not active")
-    if not is_registration_complete(db, viewer.id):
+    if not await is_registration_complete(db, viewer.id):
         raise SearchNotAllowedError("Complete your profile before searching members")
     return MemberSearchContext(viewer_id=viewer.id)
 

@@ -8,6 +8,7 @@ from config.constants import (
     OAuthProvider,
     UserStatus,
 )
+from config.rate_limit import RateLimitPolicy, RateLimitWindow
 from config.settings import Settings, get_settings
 
 __all__ = [
@@ -16,6 +17,8 @@ __all__ = [
     "Gender",
     "NotificationType",
     "OAuthProvider",
+    "RateLimitPolicy",
+    "RateLimitWindow",
     "Settings",
     "UserStatus",
     "get_settings",

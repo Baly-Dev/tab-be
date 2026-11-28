@@ -1,1 +1,1 @@
-"""Modulo Admin: console staff (lettura admin, CRUD super_admin)."""
+"""Modulo Admin — scaffolding (API, modelli e servizi da implementare)."""

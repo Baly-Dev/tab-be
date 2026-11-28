@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import uuid
+from datetime import datetime
 
 from sqlalchemy import Column, DateTime, ForeignKey, Text
 from sqlalchemy.dialects.postgresql import UUID
@@ -27,3 +30,14 @@ class AuthPasswordResetToken(Base):
         nullable=False,
         server_default=func.now(),
     )
+
+    @property
+    def is_used(self) -> bool:
+        return self.used_at is not None
+
+    def is_valid_at(self, when: datetime) -> bool:
+        return not self.is_used and self.expires_at > when
+
+    def mark_used(self, when: datetime) -> None:
+        if self.used_at is None:
+            self.used_at = when

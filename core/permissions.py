@@ -9,7 +9,7 @@ from __future__ import annotations
 import enum
 import uuid
 
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from config.constants import AppRole
 from core.utils.roles import load_user_roles
@@ -34,8 +34,7 @@ ROLE_PERMISSIONS: dict[AppRole, frozenset[Permission]] = {
             Permission.ADMIN_READ,
         }
     ),
-    AppRole.CONNECTOR: frozenset({Permission.MEMBERS_SEARCH}),
-    AppRole.MEMBER: frozenset({Permission.MEMBERS_SEARCH}),
+    AppRole.PROFESSIONAL: frozenset({Permission.MEMBERS_SEARCH}),
 }
 
 
@@ -51,18 +50,18 @@ def permissions_for_roles(role_names: list[str]) -> set[Permission]:
     return granted
 
 
-def user_has_permission(db: Session, user_id: uuid.UUID, permission: Permission) -> bool:
+async def user_has_permission(db: AsyncSession, user_id: uuid.UUID, permission: Permission) -> bool:
     """True se almeno un ruolo dell'utente concede ``permission``."""
-    roles = load_user_roles(db, user_id)
+    roles = await load_user_roles(db, user_id)
     return permission in permissions_for_roles(roles)
 
 
-def user_has_any_permission(
-    db: Session,
+async def user_has_any_permission(
+    db: AsyncSession,
     user_id: uuid.UUID,
     permissions: frozenset[Permission],
 ) -> bool:
     """True se l'utente ha almeno uno dei permessi indicati."""
-    roles = load_user_roles(db, user_id)
+    roles = await load_user_roles(db, user_id)
     user_perms = permissions_for_roles(roles)
     return bool(user_perms & permissions)

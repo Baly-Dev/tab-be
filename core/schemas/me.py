@@ -42,11 +42,18 @@ class MeProfileResponse(BaseModel):
     marketing_consent: bool = False
     residence_country: str | None = None
     residence_city: str | None = None
+    office_city: str | None = None
+    office_neighborhood: str | None = None
     bio: str | None = None
     avatar_url: PublicMediaUrl = None
     current_company_name: str | None = None
     current_job_position: str | None = None
     linkedin_url: str | None = None
+    preferred_cuisine: str | None = None
+    preferred_price_band: str | None = None
+    max_distance_meters: int | None = None
+    dietary_notes: str | None = None
+    prefers_meal_vouchers: bool = False
     profile_completeness: int = 0
     created_at: datetime
     updated_at: datetime

@@ -57,7 +57,7 @@ class SignupRequest(BaseModel):
     inviter_referral_code: str | None = Field(
         default=None,
         max_length=64,
-        description="Codice invito `?ref=` opzionale; solo connector, admin e super_admin.",
+        description="Codice invito `?ref=` opzionale; professional, admin e super_admin.",
     )
 
     @field_validator("email")

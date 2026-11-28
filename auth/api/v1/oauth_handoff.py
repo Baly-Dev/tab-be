@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
 from auth.errors.oauth_errors import (
     OAuthHandoffUnavailableError,
@@ -11,15 +11,19 @@ from auth.errors.oauth_errors import (
 )
 from auth.schemas.oauth_handoff import OAuthHandoffRequest, OAuthHandoffResponse
 from auth.utils.oauth_handoff import consume_oauth_handoff
+from auth.utils.rate_limit import require_ip_limit
 
 router = APIRouter()
 
 
 @router.post("/oauth/handoff", response_model=OAuthHandoffResponse)
-def exchange_oauth_handoff(body: OAuthHandoffRequest) -> OAuthHandoffResponse:
+async def exchange_oauth_handoff(
+    body: OAuthHandoffRequest,
+    _: None = Depends(require_ip_limit("oauth_handoff")),
+) -> OAuthHandoffResponse:
     """Single use. The code arrives in the URL fragment, then this body."""
     try:
-        payload = consume_oauth_handoff(body.handoff.strip())
+        payload = await consume_oauth_handoff(body.handoff.strip())
     except OAuthHandoffUnavailableError:
         raise http_error_oauth_handoff_unavailable() from None
     if payload is None:

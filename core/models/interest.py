@@ -23,7 +23,7 @@ class CoreInterest(Base):
     name = Column(Text, nullable=False)
     slug = Column(Text, nullable=False)
     description = Column(Text, nullable=True)
-    is_active = Column(Boolean, nullable=False, server_default=text("true")) # soft delete
+    is_active = Column(Boolean, nullable=False, server_default=text("true"))  # soft delete
     sort_order = Column(Integer, nullable=False, server_default=text("0"))
 
     created_at = Column(
@@ -37,3 +37,7 @@ class CoreInterest(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
+
+    @property
+    def is_selectable(self) -> bool:
+        return bool(self.is_active)

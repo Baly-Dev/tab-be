@@ -6,7 +6,7 @@ import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import case, func, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from config.constants import ConnectionStatus
 from core.models.connection import CoreProfileConnection
@@ -17,22 +17,17 @@ def ordered_profile_connection_pair(
     user_id_b: uuid.UUID,
 ) -> tuple[uuid.UUID, uuid.UUID]:
     """`(user_low_id, user_high_id)` con UUID ordinati per `core_profile_connections`."""
-    if user_id_a == user_id_b:
-        msg = "core_profile_connections: servono due utenti distinti"
-        raise ValueError(msg)
-    if user_id_a < user_id_b:
-        return user_id_a, user_id_b
-    return user_id_b, user_id_a
+    return CoreProfileConnection.ordered_user_pair(user_id_a, user_id_b)
 
 
-def get_connection_between(
-    db: Session,
+async def get_connection_between(
+    db: AsyncSession,
     user_id_a: uuid.UUID,
     user_id_b: uuid.UUID,
 ) -> CoreProfileConnection | None:
     """Riga connessione canonica tra due utenti distinti, se presente."""
     user_low_id, user_high_id = ordered_profile_connection_pair(user_id_a, user_id_b)
-    return db.scalar(
+    return await db.scalar(
         select(CoreProfileConnection).where(
             CoreProfileConnection.user_low_id == user_low_id,
             CoreProfileConnection.user_high_id == user_high_id,
@@ -40,13 +35,13 @@ def get_connection_between(
     )
 
 
-def load_accepted_neighbor_ids(db: Session, user_id: uuid.UUID) -> set[uuid.UUID]:
+async def load_accepted_neighbor_ids(db: AsyncSession, user_id: uuid.UUID) -> set[uuid.UUID]:
     """Id utenti con connessione ``accepted`` rispetto a ``user_id``."""
     neighbor_id = case(
         (CoreProfileConnection.user_low_id == user_id, CoreProfileConnection.user_high_id),
         else_=CoreProfileConnection.user_low_id,
     )
-    rows = db.scalars(
+    rows = (await db.scalars(
         select(neighbor_id).where(
             or_(
                 CoreProfileConnection.user_low_id == user_id,
@@ -54,7 +49,7 @@ def load_accepted_neighbor_ids(db: Session, user_id: uuid.UUID) -> set[uuid.UUID
             ),
             CoreProfileConnection.status == ConnectionStatus.ACCEPTED,
         )
-    ).all()
+    )).all()
     return set(rows)
 
 
@@ -77,8 +72,8 @@ def _accepted_neighbor_id_subquery(user_id: uuid.UUID):
     )
 
 
-def count_mutual_accepted_connections(
-    db: Session,
+async def count_mutual_accepted_connections(
+    db: AsyncSession,
     user_id_a: uuid.UUID,
     user_id_b: uuid.UUID,
 ) -> int:
@@ -87,7 +82,7 @@ def count_mutual_accepted_connections(
         return 0
     neighbors_a = _accepted_neighbor_id_subquery(user_id_a)
     neighbors_b = _accepted_neighbor_id_subquery(user_id_b)
-    count = db.scalar(
+    count = await db.scalar(
         select(func.count())
         .select_from(neighbors_a)
         .join(neighbors_b, neighbors_a.c.neighbor_id == neighbors_b.c.neighbor_id)
@@ -95,13 +90,13 @@ def count_mutual_accepted_connections(
     return int(count or 0)
 
 
-def count_accepted_connections(db: Session, user_id: uuid.UUID) -> int:
+async def count_accepted_connections(db: AsyncSession, user_id: uuid.UUID) -> int:
     """Conteggio connessioni ``accepted`` dell'utente (1° grado)."""
     pair_filter = or_(
         CoreProfileConnection.user_low_id == user_id,
         CoreProfileConnection.user_high_id == user_id,
     )
-    count = db.scalar(
+    count = await db.scalar(
         select(func.count())
         .select_from(CoreProfileConnection)
         .where(pair_filter, CoreProfileConnection.status == ConnectionStatus.ACCEPTED)
@@ -111,11 +106,11 @@ def count_accepted_connections(db: Session, user_id: uuid.UUID) -> int:
 
 def is_accepted_connection(connection: CoreProfileConnection | None) -> bool:
     """True se esiste una relazione 1° grado ``accepted``."""
-    return connection is not None and connection.status == ConnectionStatus.ACCEPTED
+    return connection is not None and connection.is_accepted
 
 
-def ensure_accepted_connection(
-    db: Session,
+async def ensure_accepted_connection(
+    db: AsyncSession,
     user_id_a: uuid.UUID,
     user_id_b: uuid.UUID,
     *,
@@ -127,7 +122,7 @@ def ensure_accepted_connection(
     """
     if user_id_a == user_id_b:
         return None
-    existing = get_connection_between(db, user_id_a, user_id_b)
+    existing = await get_connection_between(db, user_id_a, user_id_b)
     now = datetime.now(tz=UTC)
     if existing is not None:
         if existing.status == ConnectionStatus.BLOCKED:
@@ -151,4 +146,3 @@ def ensure_accepted_connection(
     )
     db.add(connection)
     return connection
-

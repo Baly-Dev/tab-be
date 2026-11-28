@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, BackgroundTasks, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.errors import (
     http_error_account_cannot_reset_password,
@@ -23,19 +23,18 @@ from auth.schemas.password_reset import (
     ResetPasswordResponse,
 )
 from auth.utils import hash_password
+from auth.utils.rate_limit import allow_password_reset_email, enforce_password_reset_ip
 from auth.utils.session import build_token_response
 from auth.utils.tokens import (
-    count_recent_password_reset_requests,
     find_valid_password_reset_row,
     generate_refresh_token_plain,
     mark_password_reset_used,
     persist_password_reset_token,
     revoke_all_refresh_tokens_for_user,
 )
-from config import UserStatus, get_settings
-from config.db.session import get_db
+from config import UserStatus
+from config.db import get_async_db
 from core.models.profile import CoreProfile
-from notifications.services.profile_incomplete import sync_profile_incomplete_notification
 from services.brevo import send_password_reset_email_background
 
 logger = logging.getLogger(__name__)
@@ -44,14 +43,19 @@ router = APIRouter()
 
 
 @router.post("/forgot-password", response_model=ForgotPasswordResponse)
-def forgot_password(
+async def forgot_password(
     body: ForgotPasswordRequest,
+    request: Request,
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
 ) -> ForgotPasswordResponse:
     """Invia email con link se l'account ha password; risposta sempre generica."""
-    settings = get_settings()
-    user = db.scalar(select(AuthUser).where(AuthUser.email == body.email))
+    await enforce_password_reset_ip(request)
+    if not await allow_password_reset_email(body.email):
+        logger.warning("Password reset email rate limit reached")
+        return ForgotPasswordResponse(status="accepted")
+
+    user = await db.scalar(select(AuthUser).where(AuthUser.email == body.email))
 
     if user is None:
         logger.info("Password reset skipped: no user for email")
@@ -68,20 +72,15 @@ def forgot_password(
         )
         return ForgotPasswordResponse(status="accepted")
 
-    limit = settings.password_reset_rate_limit_per_hour
-    if limit > 0 and count_recent_password_reset_requests(db, user.id, within_minutes=60) >= limit:
-        logger.warning("Password reset rate limit reached for user %s", user.id)
-        return ForgotPasswordResponse(status="accepted")
-
     plain = generate_refresh_token_plain()
     try:
-        persist_password_reset_token(db, user_id=user.id, plain=plain)
-        db.commit()
+        await persist_password_reset_token(db, user_id=user.id, plain=plain)
+        await db.commit()
     except ValueError:
-        db.rollback()
+        await db.rollback()
         raise http_error_password_reset_not_configured() from None
 
-    profile = db.get(CoreProfile, user.id)
+    profile = await db.get(CoreProfile, user.id)
     first_name = str(profile.first_name) if profile is not None else ""
     logger.info("Password reset token created for user %s; queuing Brevo email", user.id)
     background_tasks.add_task(
@@ -95,16 +94,18 @@ def forgot_password(
 
 
 @router.post("/reset-password", response_model=ResetPasswordResponse)
-def reset_password(
+async def reset_password(
     body: ResetPasswordRequest,
-    db: Session = Depends(get_db),
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
 ) -> ResetPasswordResponse:
     """Imposta nuova password e restituisce token (auto-login, come verify-email)."""
-    row = find_valid_password_reset_row(db, body.token.strip())
+    await enforce_password_reset_ip(request)
+    row = await find_valid_password_reset_row(db, body.token.strip())
     if row is None:
         raise http_error_invalid_reset_token()
 
-    user = db.get(AuthUser, row.user_id)
+    user = await db.get(AuthUser, row.user_id)
     if user is None:
         raise http_error_invalid_reset_token()
 
@@ -113,20 +114,19 @@ def reset_password(
 
     user.password_hash = hash_password(body.password)
     db.add(user)
-    mark_password_reset_used(db, row)
-    revoke_all_refresh_tokens_for_user(db, user.id)
-    sync_profile_incomplete_notification(db, user)
+    await mark_password_reset_used(db, row)
+    await revoke_all_refresh_tokens_for_user(db, user.id)
 
     try:
-        token_response = build_token_response(db, user)
+        token_response = await build_token_response(db, user)
     except ValueError:
-        db.rollback()
+        await db.rollback()
         raise http_error_auth_not_configured() from None
 
     try:
-        db.commit()
+        await db.commit()
     except Exception as exc:
-        db.rollback()
+        await db.rollback()
         raise http_error_reset_password_failed() from exc
 
     return ResetPasswordResponse(status="password_reset", **token_response.model_dump())

@@ -6,9 +6,9 @@ import uuid
 from datetime import UTC, datetime
 
 import jwt
-from fastapi import APIRouter, BackgroundTasks, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.errors import (
     http_error_auth_not_configured,
@@ -25,25 +25,31 @@ from auth.schemas.verify_email import (
     VerifyEmailRequest,
     VerifyEmailResponse,
 )
+from auth.utils.invites import connect_signup_inviter
+from auth.utils.rate_limit import (
+    allow_resend_verification_email,
+    enforce_ip_limit,
+    enforce_resend_verification_ip,
+)
 from auth.utils.session import build_token_response
 from auth.utils.tokens import decode_email_verify_token
-from auth.utils.invites import connect_signup_inviter
 from config import UserStatus
-from config.db.session import get_db
+from config.db import get_async_db
 from core.models.profile import CoreProfile
-from notifications.services.profile_incomplete import sync_profile_incomplete_notification
 from services.brevo import BrevoService, get_brevo_service
 
 router = APIRouter()
 
 
 @router.post("/verify-email", response_model=VerifyEmailResponse)
-def verify_email(
+async def verify_email(
     body: VerifyEmailRequest,
+    request: Request,
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     brevo: BrevoService = Depends(get_brevo_service),
 ) -> VerifyEmailResponse:
+    await enforce_ip_limit(request, "verify_email")
     try:
         payload = decode_email_verify_token(body.token.strip())
     except ValueError:
@@ -59,7 +65,7 @@ def verify_email(
         raise http_error_invalid_verification_token() from exc
 
     email_claim = (payload.get("email") or "").strip().lower()
-    user = db.get(AuthUser, uid)
+    user = await db.get(AuthUser, uid)
     if user is None:
         raise http_error_user_not_found()
 
@@ -72,19 +78,18 @@ def verify_email(
         user.email_verified_at = datetime.now(tz=UTC)
         user.status = UserStatus.ACTIVE
         db.add(user)
-        connect_signup_inviter(db, user)
-        profile = db.get(CoreProfile, user.id)
+        await connect_signup_inviter(db, user)
+        profile = await db.get(CoreProfile, user.id)
         first_name = profile.first_name if profile is not None else ""
 
     verify_status = "already_verified" if already_verified else "verified"
-    sync_profile_incomplete_notification(db, user)
     try:
-        token_response = build_token_response(db, user)
+        token_response = await build_token_response(db, user)
     except ValueError:
-        db.rollback()
+        await db.rollback()
         raise http_error_auth_not_configured() from None
 
-    db.commit()
+    await db.commit()
     if not already_verified:
         background_tasks.add_task(
             brevo.send_welcome_email_task,
@@ -95,15 +100,19 @@ def verify_email(
 
 
 @router.post("/resend-verification-email", response_model=ResendVerificationResponse)
-def resend_verification_email(
+async def resend_verification_email(
     body: ResendVerificationRequest,
+    request: Request,
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     brevo: BrevoService = Depends(get_brevo_service),
 ) -> ResendVerificationResponse:
     """Risposta neutra; invia solo se utente esiste, PENDING e email non ancora verificata."""
+    await enforce_resend_verification_ip(request)
     email_norm = body.email.strip().lower()
-    user = db.scalar(select(AuthUser).where(AuthUser.email == email_norm))
+    if not await allow_resend_verification_email(email_norm):
+        return ResendVerificationResponse(status="accepted")
+    user = await db.scalar(select(AuthUser).where(AuthUser.email == email_norm))
     if (
         user is None
         or user.email_verified_at is not None
@@ -111,7 +120,7 @@ def resend_verification_email(
     ):
         return ResendVerificationResponse(status="accepted")
 
-    profile = db.get(CoreProfile, user.id)
+    profile = await db.get(CoreProfile, user.id)
     first_name = profile.first_name if profile is not None else ""
 
     background_tasks.add_task(

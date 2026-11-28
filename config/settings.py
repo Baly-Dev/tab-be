@@ -7,6 +7,8 @@ from urllib.parse import quote_plus
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from config.rate_limit import RateLimitEnvMixin
+
 _SYNC_DRIVER = "psycopg"
 _ASYNC_DRIVER = "asyncpg"
 
@@ -31,8 +33,12 @@ def sqlalchemy_database_url(url: str, *, driver: str = _SYNC_DRIVER) -> str:
     return f"postgresql+{driver}://{rest}"
 
 
-class Settings(BaseSettings):
-    """Runtime configuration. DB_* per Postgres; ``DATABASE_URL`` opzionale (override completo)."""
+class Settings(RateLimitEnvMixin, BaseSettings):
+    """Runtime configuration. DB_* per Postgres; ``DATABASE_URL`` opzionale (override completo).
+
+    Rate-limit windows live on ``RateLimitEnvMixin`` (``RATE_LIMIT_*``). Use
+    ``settings.rate_limit`` rather than reading the raw fields from call sites.
+    """
 
     model_config = SettingsConfigDict(
         env_file=(".env", ".env.local"),
@@ -115,6 +121,12 @@ class Settings(BaseSettings):
         default="redis",
         validation_alias="REFRESH_TOKEN_STORE",
         description="redis = sessioni refresh su Redis; postgres = legacy auth_refresh_token.",
+    )
+    refresh_rotation_grace_seconds: int = Field(
+        default=10,
+        validation_alias="REFRESH_ROTATION_GRACE_SECONDS",
+        description="Due refresh paralleli con lo stesso token riusano il successore per "
+        "questi secondi. 0 = il secondo chiamante è riuso e revoca la famiglia.",
     )
     email_verify_token_expire_hours: int = Field(
         default=72,
@@ -217,10 +229,6 @@ class Settings(BaseSettings):
     password_reset_token_expire_minutes: int = Field(
         default=60,
         validation_alias="PASSWORD_RESET_TOKEN_EXPIRE_MINUTES",
-    )
-    password_reset_rate_limit_per_hour: int = Field(
-        default=5,
-        validation_alias="PASSWORD_RESET_RATE_LIMIT_PER_HOUR",
     )
     brevo_password_reset_template_id: int = Field(
         default=0,
@@ -367,6 +375,18 @@ class Settings(BaseSettings):
         """TTL refresh session su Redis (allineato a JWT_REFRESH_TOKEN_EXPIRE_DAYS)."""
         return max(1, self.jwt_refresh_token_expire_days * 86_400)
 
+    db_pool_size: int = Field(
+        default=5,
+        validation_alias="DB_POOL_SIZE",
+        description="Connessioni permanenti per processo API (replica Railway).",
+    )
+    db_max_overflow: int = Field(
+        default=10,
+        validation_alias="DB_MAX_OVERFLOW",
+        description="Connessioni extra oltre pool_size sotto picchi.",
+    )
+    db_pool_timeout_seconds: int = Field(default=30, validation_alias="DB_POOL_TIMEOUT_SECONDS")
+
     @model_validator(mode="after")
     def ensure_database_url(self) -> Self:
         if self.database_url.strip():
@@ -375,11 +395,24 @@ class Settings(BaseSettings):
                 "database_url",
                 sqlalchemy_database_url(self.database_url, driver=_SYNC_DRIVER),
             )
-            return self
-        u = quote_plus(self.db_user)
-        p = quote_plus(self.db_password)
-        url = f"postgresql+{_SYNC_DRIVER}://{u}:{p}@{self.db_host}:{self.db_port}/{self.db_name}"
-        object.__setattr__(self, "database_url", url)
+        else:
+            u = quote_plus(self.db_user)
+            p = quote_plus(self.db_password)
+            url = f"postgresql+{_SYNC_DRIVER}://{u}:{p}@{self.db_host}:{self.db_port}/{self.db_name}"
+            object.__setattr__(self, "database_url", url)
+        async_raw = (self.database_url_async or "").strip()
+        if async_raw:
+            object.__setattr__(
+                self,
+                "database_url_async",
+                sqlalchemy_database_url(async_raw, driver=_ASYNC_DRIVER),
+            )
+        else:
+            object.__setattr__(
+                self,
+                "database_url_async",
+                sqlalchemy_database_url(self.database_url, driver=_ASYNC_DRIVER),
+            )
         return self
 
     @model_validator(mode="after")

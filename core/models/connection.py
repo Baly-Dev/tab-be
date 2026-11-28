@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import uuid
 
 from sqlalchemy import CheckConstraint, Column, DateTime, Enum, ForeignKey, UniqueConstraint
@@ -67,3 +69,43 @@ class CoreProfileConnection(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
+
+    @property
+    def is_accepted(self) -> bool:
+        return self.status == ConnectionStatus.ACCEPTED
+
+    @property
+    def is_pending(self) -> bool:
+        return self.status == ConnectionStatus.PENDING
+
+    @property
+    def is_blocked(self) -> bool:
+        return self.status == ConnectionStatus.BLOCKED
+
+    def involves_user(self, user_id: uuid.UUID) -> bool:
+        return user_id in {self.user_low_id, self.user_high_id}
+
+    def peer_user_id(self, viewer_id: uuid.UUID) -> uuid.UUID:
+        """Id dell'altro utente nella coppia canonica."""
+        if self.user_low_id == viewer_id:
+            return self.user_high_id
+        if self.user_high_id == viewer_id:
+            return self.user_low_id
+        msg = "viewer_id must be a member of the connection pair"
+        raise ValueError(msg)
+
+    def initiated_by_viewer(self, viewer_id: uuid.UUID) -> bool:
+        return self.initiated_by_id == viewer_id
+
+    @staticmethod
+    def ordered_user_pair(
+        user_id_a: uuid.UUID,
+        user_id_b: uuid.UUID,
+    ) -> tuple[uuid.UUID, uuid.UUID]:
+        """`(user_low_id, user_high_id)` con UUID ordinati."""
+        if user_id_a == user_id_b:
+            msg = "core_profile_connections: servono due utenti distinti"
+            raise ValueError(msg)
+        if user_id_a < user_id_b:
+            return user_id_a, user_id_b
+        return user_id_b, user_id_a

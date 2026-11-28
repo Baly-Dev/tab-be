@@ -11,7 +11,7 @@ from urllib.parse import urlencode, urlparse
 import jwt
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.errors.oauth_errors import (
     OAuthAccountError,
@@ -33,7 +33,6 @@ from config import AppRole, OAuthProvider, UserStatus
 from core.models.profile import CoreProfile
 from core.models.user_role import CoreUserRole
 from core.services.provider_avatar import apply_provider_avatar
-from notifications.services.profile_incomplete import sync_profile_incomplete_notification
 
 OAUTH_STATUS_NEW: Literal["new_user"] = "new_user"
 OAUTH_STATUS_EXISTING: Literal["existing_user"] = "existing_user"
@@ -167,12 +166,12 @@ def oauth_link_error_code(exc: OAuthSignInError) -> str:
     return "link_failed"
 
 
-def build_frontend_redirect_url(
+async def build_frontend_redirect_url(
     frontend_base: str,
     result: OAuthSignInResult,
 ) -> str:
     """Redirect al FE con un codice monouso nel fragment, non i token in query."""
-    code = issue_oauth_handoff(
+    code = await issue_oauth_handoff(
         {
             "oauth_status": result.oauth_status,
             **result.token_response.model_dump(mode="json"),
@@ -181,66 +180,64 @@ def build_frontend_redirect_url(
     return handoff_redirect_url(frontend_base, code)
 
 
-def complete_social_sign_in(
-    db: Session,
+async def complete_social_sign_in(
+    db: AsyncSession,
     *,
     provider: OAuthProvider,
     profile: SocialUserProfile,
     provider_label: str,
 ) -> OAuthSignInResult:
     """Collega/crea utente e emette token; commit transazione."""
-    user, oauth_status = resolve_user_from_social_profile(db, provider, profile, provider_label)
-    assert_user_can_sign_in(user, db=db)
-    sync_profile_incomplete_notification(db, user)
+    user, oauth_status = await resolve_user_from_social_profile(db, provider, profile, provider_label)
+    await assert_user_can_sign_in(user, db=db)
     try:
-        token_response = build_token_response(db, user)
+        token_response = await build_token_response(db, user)
     except ValueError as exc:
-        db.rollback()
+        await db.rollback()
         raise OAuthNotConfiguredError("Auth is not configured") from exc
     try:
-        db.commit()
+        await db.commit()
     except IntegrityError as exc:
-        db.rollback()
+        await db.rollback()
         raise OAuthAccountError(f"Could not complete {provider_label} sign-in") from exc
     return OAuthSignInResult(token_response=token_response, oauth_status=oauth_status)
 
 
-def resolve_user_from_social_profile(
-    db: Session,
+async def resolve_user_from_social_profile(
+    db: AsyncSession,
     provider: OAuthProvider,
     profile: SocialUserProfile,
     provider_label: str,
 ) -> tuple[AuthUser, Literal["new_user", "existing_user"]]:
     """Trova o crea utente da ``auth_social_accounts`` / email / nuovo account."""
-    social = db.scalar(
+    social = await db.scalar(
         select(AuthSocialAccount).where(
             AuthSocialAccount.provider == provider,
             AuthSocialAccount.provider_user_id == profile.sub,
         )
     )
     if social is not None:
-        user = db.get(AuthUser, social.user_id)
+        user = await db.get(AuthUser, social.user_id)
         # Soft-delete senza unlink: rimuovi link stale e continua come nuovo signup OAuth
         if user is None or user.status == UserStatus.DELETED:
-            db.delete(social)
-            db.flush()
+            await db.delete(social)
+            await db.flush()
         else:
-            social.email = profile.email
-            social.raw_profile = profile.raw
+            social.sync_provider_profile(email=profile.email, raw_profile=profile.raw)
             db.add(social)
-            mark_email_verified_if_needed(user, profile)
-            maybe_update_profile_avatar(db, user.id, profile)
+            user.mark_email_verified_from_provider(email_verified=profile.email_verified)
+            await maybe_update_profile_avatar(db, user.id, profile)
             db.add(user)
-            return user, oauth_status_for_user(db, user)
+            return user, await oauth_status_for_user(db, user)
 
-    user_by_email = db.scalar(select(AuthUser).where(AuthUser.email == profile.email))
+    user_by_email = await db.scalar(select(AuthUser).where(AuthUser.email == profile.email))
     if user_by_email is not None:
         if str(user_by_email.email).strip().lower() != profile.email:
             raise OAuthAccountError(f"Email mismatch for {provider_label} account")
         # Soft-deleted senza anonymize: non riusare
         if user_by_email.status == UserStatus.DELETED:
             raise OAuthAccountError("Account deleted")
-        existing_social = db.scalar(
+        existing_social = await db.scalar(
             select(AuthSocialAccount).where(
                 AuthSocialAccount.user_id == user_by_email.id,
                 AuthSocialAccount.provider == provider,
@@ -257,14 +254,14 @@ def resolve_user_from_social_profile(
                 raw_profile=profile.raw,
             )
         )
-        mark_email_verified_if_needed(user_by_email, profile)
-        maybe_update_profile_avatar(db, user_by_email.id, profile)
+        user_by_email.mark_email_verified_from_provider(email_verified=profile.email_verified)
+        await maybe_update_profile_avatar(db, user_by_email.id, profile)
         db.add(user_by_email)
-        return user_by_email, oauth_status_for_user(db, user_by_email)
+        return user_by_email, await oauth_status_for_user(db, user_by_email)
 
     user = AuthUser(
         email=profile.email,
-        username=generate_unique_username(
+        username=await generate_unique_username(
             db, profile.email,
             first_name=profile.given_name,
             last_name=profile.family_name,
@@ -275,7 +272,7 @@ def resolve_user_from_social_profile(
     )
     db.add(user)
     try:
-        db.flush()
+        await db.flush()
     except IntegrityError as exc:
         raise OAuthAccountError("Email or username already registered") from exc
 
@@ -296,27 +293,21 @@ def resolve_user_from_social_profile(
             avatar_url=None,
         )
     )
-    db.flush()
-    maybe_update_profile_avatar(db, user.id, profile)
-    db.add(CoreUserRole(user_id=user.id, role=AppRole.MEMBER))
+    await db.flush()
+    await maybe_update_profile_avatar(db, user.id, profile)
+    db.add(CoreUserRole(user_id=user.id, role=AppRole.PROFESSIONAL))
     return user, OAUTH_STATUS_NEW
 
 
-def mark_email_verified_if_needed(user: AuthUser, profile: SocialUserProfile) -> None:
-    """Segna email verificata dal provider; ACTIVE solo dopo POST /signup."""
-    if profile.email_verified and user.email_verified_at is None:
-        user.email_verified_at = datetime.now(tz=UTC)
-
-
-def oauth_status_for_user(db: Session, user: AuthUser) -> Literal["new_user", "existing_user"]:
+async def oauth_status_for_user(db: AsyncSession, user: AuthUser) -> Literal["new_user", "existing_user"]:
     """``existing_user`` se l'account è già operativo (ACTIVE con profilo)."""
-    if user.status == UserStatus.ACTIVE and is_registration_complete(db, user.id):
+    if user.status == UserStatus.ACTIVE and await is_registration_complete(db, user.id):
         return OAUTH_STATUS_EXISTING
     return OAUTH_STATUS_NEW
 
 
-def maybe_update_profile_avatar(
-    db: Session,
+async def maybe_update_profile_avatar(
+    db: AsyncSession,
     user_id: uuid.UUID,
     profile: SocialUserProfile,
 ) -> None:
@@ -326,7 +317,7 @@ def maybe_update_profile_avatar(
     """
     if not profile.picture:
         return
-    core_profile = db.get(CoreProfile, user_id)
+    core_profile = await db.get(CoreProfile, user_id)
     if core_profile is None:
         core_profile = CoreProfile(
             user_id=user_id,
@@ -335,11 +326,11 @@ def maybe_update_profile_avatar(
             avatar_url=None,
         )
         db.add(core_profile)
-        db.flush()
-    apply_provider_avatar(db, core_profile, profile.picture)
+        await db.flush()
+    await apply_provider_avatar(db, core_profile, profile.picture)
 
 
-def assert_user_can_sign_in(user: AuthUser, *, db: Session) -> None:
+async def assert_user_can_sign_in(user: AuthUser, *, db: AsyncSession) -> None:
     """Blocca sospesi/eliminati; PENDING ammesso solo se wizard non completato."""
     if user.status == UserStatus.SUSPENDED:
         raise OAuthAccountError("Account suspended")
@@ -348,7 +339,7 @@ def assert_user_can_sign_in(user: AuthUser, *, db: Session) -> None:
     if user.status == UserStatus.ACTIVE:
         return
     if user.status == UserStatus.PENDING:
-        if is_registration_complete(db, user.id):
+        if await is_registration_complete(db, user.id):
             raise OAuthAccountError("Account is not active")
         return
     raise OAuthAccountError("Account is not active")
@@ -364,8 +355,8 @@ def split_full_name(name: str) -> tuple[str, str]:
     return parts[0], parts[1]
 
 
-def complete_social_link(
-    db: Session,
+async def complete_social_link(
+    db: AsyncSession,
     *,
     user_id: uuid.UUID,
     provider: OAuthProvider,
@@ -373,7 +364,7 @@ def complete_social_link(
     provider_label: str,
 ) -> None:
     """Collega un account OAuth all'utente autenticato (flusso Settings)."""
-    user = db.get(AuthUser, user_id)
+    user = await db.get(AuthUser, user_id)
     if user is None or user.status in (UserStatus.DELETED, UserStatus.SUSPENDED):
         raise OAuthAccountError("Account cannot link OAuth")
     if user.status != UserStatus.ACTIVE:
@@ -383,7 +374,7 @@ def complete_social_link(
     if user_email != profile.email.strip().lower():
         raise OAuthAccountError(f"Email mismatch for {provider_label} account")
 
-    existing_for_user = db.scalar(
+    existing_for_user = await db.scalar(
         select(AuthSocialAccount).where(
             AuthSocialAccount.user_id == user.id,
             AuthSocialAccount.provider == provider,
@@ -391,17 +382,16 @@ def complete_social_link(
     )
     if existing_for_user is not None:
         if existing_for_user.provider_user_id == profile.sub:
-            existing_for_user.email = profile.email
-            existing_for_user.raw_profile = profile.raw
+            existing_for_user.sync_provider_profile(email=profile.email, raw_profile=profile.raw)
             db.add(existing_for_user)
-            mark_email_verified_if_needed(user, profile)
-            maybe_update_profile_avatar(db, user.id, profile)
+            user.mark_email_verified_from_provider(email_verified=profile.email_verified)
+            await maybe_update_profile_avatar(db, user.id, profile)
             db.add(user)
-            _commit_social_link(db, provider_label)
+            await _commit_social_link(db, provider_label)
             return
         raise OAuthAccountError(f"Another {provider_label} account is linked to this user")
 
-    existing_remote = db.scalar(
+    existing_remote = await db.scalar(
         select(AuthSocialAccount).where(
             AuthSocialAccount.provider == provider,
             AuthSocialAccount.provider_user_id == profile.sub,
@@ -419,15 +409,15 @@ def complete_social_link(
             raw_profile=profile.raw,
         )
     )
-    mark_email_verified_if_needed(user, profile)
-    maybe_update_profile_avatar(db, user.id, profile)
+    user.mark_email_verified_from_provider(email_verified=profile.email_verified)
+    await maybe_update_profile_avatar(db, user.id, profile)
     db.add(user)
-    _commit_social_link(db, provider_label)
+    await _commit_social_link(db, provider_label)
 
 
-def _commit_social_link(db: Session, provider_label: str) -> None:
+async def _commit_social_link(db: AsyncSession, provider_label: str) -> None:
     try:
-        db.commit()
+        await db.commit()
     except IntegrityError as exc:
-        db.rollback()
+        await db.rollback()
         raise OAuthAccountError(f"Could not link {provider_label} account") from exc

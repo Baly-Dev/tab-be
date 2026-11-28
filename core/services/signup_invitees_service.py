@@ -5,21 +5,20 @@ from __future__ import annotations
 import uuid
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.models.user import AuthUser
 from auth.utils.invites import count_signup_invites
 from config import UserStatus
 from core.models.profile import CoreProfile
 from core.schemas.invites import SignupInviteeItem, SignupInviteesListResponse
-from core.utils.roles import load_connector_user_ids
 
 _DEFAULT_LIMIT = 50
 _MAX_LIMIT = 100
 
 
-def list_signup_invitees(
-    db: Session,
+async def list_signup_invitees(
+    db: AsyncSession,
     inviter_id: uuid.UUID,
     *,
     limit: int = _DEFAULT_LIMIT,
@@ -30,7 +29,7 @@ def list_signup_invitees(
     safe_offset = max(offset, 0)
     total = count_signup_invites(db, inviter_id)
 
-    rows = db.execute(
+    rows = await db.execute(
         select(AuthUser, CoreProfile)
         .outerjoin(CoreProfile, CoreProfile.user_id == AuthUser.id)
         .where(
@@ -42,7 +41,6 @@ def list_signup_invitees(
         .offset(safe_offset)
     ).all()
 
-    connector_ids = load_connector_user_ids(db, (user.id for user, _profile in rows))
     items = [
         SignupInviteeItem(
             id=user.id,
@@ -60,7 +58,7 @@ def list_signup_invitees(
                 if profile is not None and profile.current_company_name
                 else None
             ),
-            is_connector=user.id in connector_ids,
+            is_connector=False,
             signed_up_at=user.created_at,
         )
         for user, profile in rows

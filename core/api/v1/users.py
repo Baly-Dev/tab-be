@@ -5,13 +5,13 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Path
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.models.user import AuthUser
 from auth.utils.helpers import AuthenticatedUser
 from config import UserStatus
 from config.constants import ConnectionStatus
-from config.db.session import get_db
+from config.db import get_async_db
 from core.errors import (
     http_error_for_profile_connections_forbidden,
     http_error_for_profile_not_found,
@@ -43,9 +43,9 @@ router = APIRouter()
     response_model=PublicProfileResponse,
     summary="Profilo pubblico utente",
 )
-def get_public_profile(
+async def get_public_profile(
     user: AuthenticatedUser,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     username: str = Path(
         min_length=3,
         max_length=32,
@@ -58,7 +58,7 @@ def get_public_profile(
     if not normalized:
         raise http_error_for_profile_not_found()
 
-    subject_row = db.execute(
+    subject_row = await db.execute(
         select(AuthUser, CoreProfile)
         .join(CoreProfile, CoreProfile.user_id == AuthUser.id)
         .where(
@@ -93,7 +93,7 @@ def get_public_profile(
             id=subject.id,
             username=str(subject.username),
             is_self=is_self,
-            roles=public_identity_roles(load_user_roles(db, subject.id)),
+            roles=public_identity_roles(await load_user_roles(db, subject.id)),
             interests=[],
             first_name=str(profile_row.first_name),
             last_name=str(profile_row.last_name),
@@ -106,7 +106,7 @@ def get_public_profile(
             joined_at=subject.created_at,
         )
 
-    interest_rows = db.execute(
+    interest_rows = await db.execute(
         select(CoreInterest.id, CoreInterest.name)
         .join(CoreUserInterest, CoreUserInterest.interest_id == CoreInterest.id)
         .where(CoreUserInterest.user_id == subject.id)
@@ -122,7 +122,7 @@ def get_public_profile(
         id=subject.id,
         username=str(subject.username),
         is_self=is_self,
-        roles=load_user_roles(db, subject.id),
+        roles=await load_user_roles(db, subject.id),
         interests=interests,
         first_name=str(profile_row.first_name),
         last_name=str(profile_row.last_name),
@@ -147,9 +147,9 @@ def get_public_profile(
     response_model=ProfileConnectionsListResponse,
     summary="Connessioni del profilo pubblico",
 )
-def get_profile_connections(
+async def get_profile_connections(
     user: AuthenticatedUser,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     username: str = Path(
         min_length=3,
         max_length=32,
@@ -162,7 +162,7 @@ def get_profile_connections(
     if not normalized:
         raise http_error_for_profile_not_found()
 
-    subject = db.scalar(
+    subject = await db.scalar(
         select(AuthUser).where(
             AuthUser.username == normalized,
             AuthUser.status == UserStatus.ACTIVE,

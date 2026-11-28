@@ -7,12 +7,12 @@ import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import and_, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.models.user import AuthUser
 from auth.utils.registration import is_registration_complete
 from config import UserStatus
-from config.constants import ConnectionStatus, NotificationType
+from config.constants import ConnectionStatus
 from core.models.connection import CoreProfileConnection
 from core.models.profile import CoreProfile
 from core.schemas.connection import ConnectionPeerResponse, ConnectionResponse
@@ -27,15 +27,13 @@ from core.errors.connection_errors import (
     InvalidConnectionActionError,
     TargetUserNotFoundError,
 )
-from core.utils.connections import get_connection_between, ordered_profile_connection_pair
-from core.utils.roles import load_connector_user_ids
-from notifications.services import connection_payload, notify, snapshot_actor
+from core.utils.connections import get_connection_between
 
 logger = logging.getLogger(__name__)
 
 
-def request_connection(
-    db: Session,
+async def request_connection(
+    db: AsyncSession,
     viewer: AuthUser,
     target_user_id: uuid.UUID,
 ) -> ConnectionResponse:
@@ -56,15 +54,7 @@ def request_connection(
             if existing.initiated_by_id == target.id:
                 existing.status = ConnectionStatus.ACCEPTED
                 existing.updated_at = now
-                _notify_connection(
-                    db,
-                    recipient_id=target.id,
-                    actor_id=viewer.id,
-                    connection_id=existing.id,
-                    ntype=NotificationType.CONNECTION_ACCEPTED,
-                    deep_link="/network?scope=connections",
-                )
-                db.commit()
+                await db.commit()
                 db.refresh(existing)
                 logger.info(
                     "connection.auto_accepted connection_id=%s viewer_id=%s target_id=%s",
@@ -75,7 +65,7 @@ def request_connection(
                 return _connection_to_response(db, existing, viewer.id)
             raise ConnectionAlreadyPendingError
 
-    user_low_id, user_high_id = ordered_profile_connection_pair(viewer.id, target.id)
+    user_low_id, user_high_id = CoreProfileConnection.ordered_user_pair(viewer.id, target.id)
     connection = CoreProfileConnection(
         user_low_id=user_low_id,
         user_high_id=user_high_id,
@@ -84,16 +74,8 @@ def request_connection(
         updated_at=now,
     )
     db.add(connection)
-    db.flush()
-    _notify_connection(
-        db,
-        recipient_id=target.id,
-        actor_id=viewer.id,
-        connection_id=connection.id,
-        ntype=NotificationType.CONNECTION_REQUEST,
-        deep_link="/network?scope=incoming",
-    )
-    db.commit()
+    await db.flush()
+    await db.commit()
     db.refresh(connection)
     _send_connection_request_email(db, recipient=target, actor=viewer)
     logger.info(
@@ -105,8 +87,8 @@ def request_connection(
     return _connection_to_response(db, connection, viewer.id)
 
 
-def accept_connection(
-    db: Session,
+async def accept_connection(
+    db: AsyncSession,
     viewer: AuthUser,
     connection_id: uuid.UUID,
 ) -> ConnectionResponse:
@@ -119,34 +101,14 @@ def accept_connection(
 
     connection.status = ConnectionStatus.ACCEPTED
     connection.updated_at = _utcnow()
-    _notify_connection(
-        db,
-        recipient_id=connection.initiated_by_id,
-        actor_id=viewer.id,
-        connection_id=connection.id,
-        ntype=NotificationType.CONNECTION_ACCEPTED,
-        deep_link="/network?scope=connections",
-    )
-    from admin.services.audit_log import record_audit
-    from config.constants import AuditModule
-
-    record_audit(
-        db,
-        module=AuditModule.NETWORK,
-        action="connection.accepted",
-        message="Connessione accettata",
-        actor=viewer,
-        target_type="connection",
-        target_id=connection.id,
-    )
-    db.commit()
+    await db.commit()
     db.refresh(connection)
     logger.info("connection.accepted connection_id=%s user_id=%s", connection.id, viewer.id)
     return _connection_to_response(db, connection, viewer.id)
 
 
-def decline_connection(
-    db: Session,
+async def decline_connection(
+    db: AsyncSession,
     viewer: AuthUser,
     connection_id: uuid.UUID,
 ) -> None:
@@ -155,25 +117,13 @@ def decline_connection(
     if connection.status != ConnectionStatus.PENDING:
         raise InvalidConnectionActionError("Only pending connections can be declined")
 
-    db.delete(connection)
-    from admin.services.audit_log import record_audit
-    from config.constants import AuditModule
-
-    record_audit(
-        db,
-        module=AuditModule.NETWORK,
-        action="connection.declined",
-        message="Richiesta di connessione rifiutata",
-        actor=viewer,
-        target_type="connection",
-        target_id=connection_id,
-    )
-    db.commit()
+    await db.delete(connection)
+    await db.commit()
     logger.info("connection.declined connection_id=%s user_id=%s", connection_id, viewer.id)
 
 
-def list_connections(
-    db: Session,
+async def list_connections(
+    db: AsyncSession,
     viewer: AuthUser,
     *,
     status: ConnectionStatus | None = None,
@@ -188,27 +138,21 @@ def list_connections(
     if status is not None:
         query = query.where(CoreProfileConnection.status == status)
     query = query.order_by(CoreProfileConnection.updated_at.desc())
-    rows = list(db.scalars(query).all())
-    connector_ids = load_connector_user_ids(db, [_peer_user_id(row, viewer.id) for row in rows])
+    rows = list((await db.scalars(query)).all())
     return [
-        _connection_to_response(
-            db,
-            row,
-            viewer.id,
-            is_connector=_peer_user_id(row, viewer.id) in connector_ids,
-        )
+        await _connection_to_response(db, row, viewer.id, is_connector=False)
         for row in rows
     ]
 
 
-def list_profile_connections(
-    db: Session,
+async def list_profile_connections(
+    db: AsyncSession,
     viewer: AuthUser,
     subject: AuthUser,
 ) -> list[ProfileConnectionPeerResponse]:
     """Connessioni ``accepted`` del subject, con relazione viewer↔peer."""
     rows = list(
-        db.scalars(
+        (await db.scalars(
             select(CoreProfileConnection)
             .where(
                 or_(
@@ -218,7 +162,7 @@ def list_profile_connections(
                 CoreProfileConnection.status == ConnectionStatus.ACCEPTED,
             )
             .order_by(CoreProfileConnection.updated_at.desc())
-        ).all()
+        )).all()
     )
     peer_ids = [
         row.user_high_id if row.user_low_id == subject.id else row.user_low_id
@@ -229,16 +173,16 @@ def list_profile_connections(
 
     users_by_id = {
         user.id: user
-        for user in db.scalars(select(AuthUser).where(AuthUser.id.in_(peer_ids))).all()
+        for user in (await db.scalars(select(AuthUser).where(AuthUser.id.in_(peer_ids)))).all()
     }
     profiles_by_id = {
         profile.user_id: profile
-        for profile in db.scalars(select(CoreProfile).where(CoreProfile.user_id.in_(peer_ids))).all()
+        for profile in (await db.scalars(select(CoreProfile).where(CoreProfile.user_id.in_(peer_ids)))).all()
     }
     other_ids = [peer_id for peer_id in peer_ids if peer_id != viewer.id]
     viewer_links: dict[uuid.UUID, CoreProfileConnection] = {}
     if other_ids:
-        for link in db.scalars(
+        for link in (await db.scalars(
             select(CoreProfileConnection).where(
                 or_(
                     and_(
@@ -251,12 +195,11 @@ def list_profile_connections(
                     ),
                 )
             )
-        ).all():
+        )).all():
             other_id = link.user_high_id if link.user_low_id == viewer.id else link.user_low_id
             viewer_links[other_id] = link
 
     items: list[ProfileConnectionPeerResponse] = []
-    connector_ids = load_connector_user_ids(db, peer_ids)
     for peer_id in peer_ids:
         user = users_by_id.get(peer_id)
         if user is None or user.status != UserStatus.ACTIVE:
@@ -282,68 +225,61 @@ def list_profile_connections(
                 avatar_url=profile.avatar_url if profile is not None else None,
                 is_self=is_self,
                 connection=connection,
-                is_connector=peer_id in connector_ids,
+                is_connector=False,
             )
         )
     return items
 
 
-def _load_connectable_user(db: Session, user_id: uuid.UUID) -> AuthUser:
+async def _load_connectable_user(db: AsyncSession, user_id: uuid.UUID) -> AuthUser:
     """Utente target attivo con onboarding completato."""
-    user = db.get(AuthUser, user_id)
+    user = await db.get(AuthUser, user_id)
     if user is None:
         raise TargetUserNotFoundError
     if user.status != UserStatus.ACTIVE:
         raise TargetUserNotFoundError
-    if not is_registration_complete(db, user.id):
+    if not await is_registration_complete(db, user.id):
         raise TargetUserNotFoundError
     return user
 
 
-def _get_connection_for_viewer(
-    db: Session,
+async def _get_connection_for_viewer(
+    db: AsyncSession,
     viewer_id: uuid.UUID,
     connection_id: uuid.UUID,
 ) -> CoreProfileConnection:
     """Carica connessione se il viewer ne fa parte."""
-    connection = db.get(CoreProfileConnection, connection_id)
+    connection = await db.get(CoreProfileConnection, connection_id)
     if connection is None:
         raise ConnectionNotFoundError
-    if viewer_id not in (connection.user_low_id, connection.user_high_id):
+    if not connection.involves_user(viewer_id):
         raise ConnectionNotFoundError
     return connection
 
 
-def _peer_user_id(connection: CoreProfileConnection, viewer_id: uuid.UUID) -> uuid.UUID:
-    """Id dell'altro utente nella coppia."""
-    if connection.user_low_id == viewer_id:
-        return connection.user_high_id
-    return connection.user_low_id
-
-
-def _connection_to_response(
-    db: Session,
+async def _connection_to_response(
+    db: AsyncSession,
     connection: CoreProfileConnection,
     viewer_id: uuid.UUID,
     *,
     is_connector: bool | None = None,
 ) -> ConnectionResponse:
     """Serializza connessione con dati peer."""
-    peer_id = _peer_user_id(connection, viewer_id)
-    peer_user = db.get(AuthUser, peer_id)
-    peer_profile = db.get(CoreProfile, peer_id)
+    peer_id = connection.peer_user_id(viewer_id)
+    peer_user = await db.get(AuthUser, peer_id)
+    peer_profile = await db.get(CoreProfile, peer_id)
     if peer_user is None:
         raise ConnectionNotFoundError
     connector = (
         is_connector
         if is_connector is not None
-        else peer_id in load_connector_user_ids(db, [peer_id])
+        else False
     )
 
     return ConnectionResponse(
         id=connection.id,
         status=connection.status,
-        initiated_by_me=connection.initiated_by_id == viewer_id,
+        initiated_by_me=connection.initiated_by_viewer(viewer_id),
         peer=ConnectionPeerResponse(
             id=peer_user.id,
             username=str(peer_user.username),
@@ -362,39 +298,15 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-def _notify_connection(
-    db: Session,
-    *,
-    recipient_id: uuid.UUID,
-    actor_id: uuid.UUID,
-    connection_id: uuid.UUID,
-    ntype: NotificationType,
-    deep_link: str,
-) -> None:
-    """Scrive inbox nella stessa transazione del cambio connessione."""
-    notify(
-        db,
-        user_id=recipient_id,
-        notification_type=ntype,
-        payload=connection_payload(
-            connection_id=connection_id,
-            actor=snapshot_actor(db, actor_id),
-            deep_link=deep_link,
-        ),
-        dedup_key=f"{ntype.value}:{connection_id}",
-    )
-
-
-def _person_names(db: Session, user_id: uuid.UUID) -> tuple[str, str]:
+async def _person_names(db: AsyncSession, user_id: uuid.UUID) -> tuple[str, str]:
     """Nome completo e nome proprio, vuoti se il profilo non li ha."""
-    profile = db.get(CoreProfile, user_id)
-    first_name = str(profile.first_name or "").strip() if profile is not None else ""
-    last_name = str(profile.last_name or "").strip() if profile is not None else ""
-    full_name = " ".join(part for part in (first_name, last_name) if part)
-    return full_name, first_name
+    profile = await db.get(CoreProfile, user_id)
+    if profile is None:
+        return "", ""
+    return profile.full_name, profile.given_name
 
 
-def _send_connection_request_email(db: Session, *, recipient: AuthUser, actor: AuthUser) -> None:
+def _send_connection_request_email(db: AsyncSession, *, recipient: AuthUser, actor: AuthUser) -> None:
     """Email transazionale dopo il commit della richiesta. Un errore Brevo non annulla la richiesta."""
     from services.brevo import get_brevo_service
 

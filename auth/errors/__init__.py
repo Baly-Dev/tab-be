@@ -42,6 +42,10 @@ from auth.errors.password_reset_errors import (
     http_error_password_reset_not_configured,
     http_error_reset_password_failed,
 )
+from auth.errors.rate_limit_errors import (
+    http_error_rate_limit_unavailable,
+    http_error_rate_limited,
+)
 from auth.errors.session_errors import (
     http_error_access_token_expired,
     http_error_account_not_active,
@@ -111,6 +115,8 @@ __all__ = [
     "http_error_password_required",
     "http_error_password_required_for_delete",
     "http_error_password_reset_not_configured",
+    "http_error_rate_limit_unavailable",
+    "http_error_rate_limited",
     "http_error_refresh_token_forbidden",
     "http_error_registration_already_complete",
     "http_error_reset_password_failed",

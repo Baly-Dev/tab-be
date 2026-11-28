@@ -9,10 +9,10 @@ Formati WP (``wp_check_password`` / ``wp_hash_password`` da WordPress 6.8):
   ``base64(HMAC-SHA384(password, key=wp-sha384))``; il prefisso ``$wp`` si toglie
   prima di ``bcrypt.checkpw``.
 - ``$P$`` / ``$H$`` — phpass portable (MD5 iterato), sale nel hash.
-- 32 caratteri — MD5 legacy WP.
 - ``$2y$`` / ``$2a$`` / ``$2b$`` senza ``$wp`` — bcrypt sulla password in chiaro.
 
-Non servono ``AUTH_KEY`` / salt di ``wp-config.php``: il sale è nel hash.
+Non si verificano hash MD5 esadecimali. Non servono ``AUTH_KEY`` / salt di
+``wp-config.php``: il sale è nel hash.
 """
 
 from __future__ import annotations
@@ -51,10 +51,9 @@ def verify_password(plain: str, password_hash: str) -> bool:
             return _verify_wp_prefixed_bcrypt(plain, stored)
         if stored.startswith("$P$") or stored.startswith("$H$"):
             return bool(phpass.verify(plain, stored))
-        if len(stored) <= 32:
-            digest = hashlib.md5(plain.encode("utf-8")).hexdigest()
-            return hmac.compare_digest(digest, stored.lower())
-        return bcrypt.checkpw(plain.encode("utf-8"), stored.encode("ascii"))
+        if stored.startswith("$2"):
+            return bcrypt.checkpw(plain.encode("utf-8"), stored.encode("ascii"))
+        return False
     except (ValueError, TypeError):
         return False
 

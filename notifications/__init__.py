@@ -1,1 +1,1 @@
-"""Modulo Notifications: inbox in-app, API e punto unico di scrittura."""
+"""Modulo Notifications — scaffolding (inbox e push da implementare)."""

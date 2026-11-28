@@ -9,8 +9,8 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 import jwt
-from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from typing import TYPE_CHECKING
 
@@ -123,8 +123,8 @@ def _refresh_sessions():
     return get_refresh_session_service()
 
 
-def persist_refresh_token(
-    db: Session,
+async def persist_refresh_token(
+    db: AsyncSession,
     *,
     user_id: uuid.UUID,
     plain: str,
@@ -132,42 +132,47 @@ def persist_refresh_token(
 ) -> "RefreshTokenRecord":
     """Registra refresh (Redis o Postgres)."""
     _ = settings
-    return _refresh_sessions().persist(db, user_id=user_id, plain=plain)
+    return await _refresh_sessions().persist(db, user_id=user_id, plain=plain)
 
 
-def find_valid_refresh_row(
-    db: Session,
+async def find_valid_refresh_row(
+    db: AsyncSession,
     plain: str,
     *,
     settings: Settings | None = None,
 ) -> "RefreshTokenRecord | None":
     """Sessione refresh valida per token plain, se esiste."""
     _ = settings
-    return _refresh_sessions().find_valid(db, plain=plain)
+    return await _refresh_sessions().find_valid(db, plain=plain)
 
 
-def revoke_refresh_plain(db: Session, plain: str, *, settings: Settings | None = None) -> bool:
+async def revoke_refresh_plain(
+    db: AsyncSession,
+    plain: str,
+    *,
+    settings: Settings | None = None,
+) -> bool:
     """Revoca un refresh token; ritorna True se trovato e revocato."""
     _ = settings
-    return _refresh_sessions().revoke_plain(db, plain)
+    return await _refresh_sessions().revoke_plain(db, plain)
 
 
-def rotate_refresh_token(
-    db: Session,
+async def rotate_refresh_token(
+    db: AsyncSession,
     plain: str,
     *,
     settings: Settings | None = None,
 ) -> "tuple[RefreshTokenRecord, str, AuthUser] | None":
     """Ruota refresh; None se invalido."""
     _ = settings
-    return _refresh_sessions().rotate(db, plain)
+    return await _refresh_sessions().rotate(db, plain)
 
 
 # --- Password reset token (opaque, DB) ---
 
 
-def persist_password_reset_token(
-    db: Session,
+async def persist_password_reset_token(
+    db: AsyncSession,
     *,
     user_id: uuid.UUID,
     plain: str,
@@ -176,13 +181,15 @@ def persist_password_reset_token(
     """Salva hash reset password; invalida token precedenti non usati per l'utente."""
     s = settings or get_settings()
     now = datetime.now(tz=UTC)
-    for row in db.scalars(
-        select(AuthPasswordResetToken).where(
-            AuthPasswordResetToken.user_id == user_id,
-            AuthPasswordResetToken.used_at.is_(None),
+    for row in (
+        await db.scalars(
+            select(AuthPasswordResetToken).where(
+                AuthPasswordResetToken.user_id == user_id,
+                AuthPasswordResetToken.used_at.is_(None),
+            )
         )
     ).all():
-        row.used_at = now
+        row.mark_used(now)
         db.add(row)
 
     expires_at = now + timedelta(minutes=s.password_reset_token_expire_minutes)
@@ -192,12 +199,12 @@ def persist_password_reset_token(
         expires_at=expires_at,
     )
     db.add(token_row)
-    db.flush()
+    await db.flush()
     return token_row
 
 
-def find_valid_password_reset_row(
-    db: Session,
+async def find_valid_password_reset_row(
+    db: AsyncSession,
     plain: str,
     *,
     settings: Settings | None = None,
@@ -205,7 +212,7 @@ def find_valid_password_reset_row(
     """Riga reset valida (non usata, non scaduta)."""
     token_hash = hash_refresh_token(plain, settings=settings)
     now = datetime.now(tz=UTC)
-    return db.scalar(
+    return await db.scalar(
         select(AuthPasswordResetToken).where(
             AuthPasswordResetToken.token_hash == token_hash,
             AuthPasswordResetToken.used_at.is_(None),
@@ -214,32 +221,12 @@ def find_valid_password_reset_row(
     )
 
 
-def mark_password_reset_used(db: Session, row: AuthPasswordResetToken) -> None:
+async def mark_password_reset_used(db: AsyncSession, row: AuthPasswordResetToken) -> None:
     """Consuma il token monouso."""
-    if row.used_at is None:
-        row.used_at = datetime.now(tz=UTC)
-        db.add(row)
+    row.mark_used(datetime.now(tz=UTC))
+    db.add(row)
 
 
-def revoke_all_refresh_tokens_for_user(db: Session, user_id: uuid.UUID) -> int:
+async def revoke_all_refresh_tokens_for_user(db: AsyncSession, user_id: uuid.UUID) -> int:
     """Revoca tutte le sessioni refresh dell'utente; ritorna quante revocate."""
-    return _refresh_sessions().revoke_all_for_user(db, user_id)
-
-
-def count_recent_password_reset_requests(
-    db: Session,
-    user_id: uuid.UUID,
-    *,
-    within_minutes: int,
-) -> int:
-    """Conta richieste reset create di recente (rate limit)."""
-    since = datetime.now(tz=UTC) - timedelta(minutes=within_minutes)
-    count = db.scalar(
-        select(func.count())
-        .select_from(AuthPasswordResetToken)
-        .where(
-            AuthPasswordResetToken.user_id == user_id,
-            AuthPasswordResetToken.created_at >= since,
-        )
-    )
-    return int(count or 0)
+    return await _refresh_sessions().revoke_all_for_user(db, user_id)

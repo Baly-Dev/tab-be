@@ -35,7 +35,7 @@ class PublicProfileResponse(BaseModel):
     username: str
     is_self: bool = Field(description="True se il viewer sta guardando il proprio profilo.")
     roles: list[str] = Field(
-        description="Ruoli pubblici. Senza connessione include solo il ruolo connector (badge ambassador).",
+        description="Ruoli pubblici sul profilo. Vuoto: host non è un ruolo account.",
     )
     interests: list[PublicProfileInterestItem]
     first_name: str
